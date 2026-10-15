@@ -354,6 +354,39 @@ class TrackViewSet(ModelViewSet):
         _audit(request, "track.toggle_enabled", track, f"{track.title} enabled={track.enabled}")
         return Response(TrackSerializer(track).data)
 
+    @action(detail=True, methods=["post"], url_path="play_now")
+    def play_now(self, request, pk=None):
+        """Force this track onto the stream immediately (interrupts the current item).
+
+        Queued in BroadcastState; the engine claims it within ~5s via the
+        force-play poll, plays it once, then the rotation resumes.
+        """
+        from apps.broadcast.services import request_force_play
+
+        track = self.get_object()
+        try:
+            state = request_force_play(track)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        _audit(request, "track.play_now", track, f"Force play {track.title} — {track.artist}")
+        from apps.common.models import StationSettings
+
+        broadcast_on = StationSettings.get().broadcast_enabled
+        return Response(
+            {
+                "ok": True,
+                "title": track.title,
+                "artist": track.artist,
+                "broadcast_enabled": broadcast_on,
+                "detail": (
+                    "Queued to play now — it starts within a few seconds."
+                    if broadcast_on
+                    else "Queued. The broadcast is off; it will play when you turn the broadcast on."
+                ),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=["get"])
     def airings(self, request, pk=None):
         track = self.get_object()

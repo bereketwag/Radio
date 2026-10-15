@@ -106,6 +106,13 @@ class BroadcastState(models.Model):
     listeners_measured_at = models.DateTimeField(null=True, blank=True)
     engine_online = models.BooleanField(default=False)
     last_heartbeat = models.DateTimeField(null=True, blank=True)
+    # Admin "Play now": the most recent forced track and when the engine
+    # claimed it (null = still waiting to be handed over).
+    force_track = models.ForeignKey(
+        Track, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    force_requested_at = models.DateTimeField(null=True, blank=True)
+    force_started_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

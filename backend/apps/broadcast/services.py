@@ -172,11 +172,9 @@ def export_playlist_m3u(playlist: Playlist | None = None) -> list[str]:
     """
     from apps.common.utils import public_media_url
 
-    def _lines_for(candidate: Playlist) -> list[str]:
+    def _lines_for_tracks(tracks) -> list[str]:
         lines: list[str] = []
-        entries = candidate.entries.select_related("track").filter(track__enabled=True).order_by("position")
-        for entry in entries:
-            track = entry.track
+        for track in tracks:
             if not track.audio_file:
                 continue
             # EXTINF must stay a single line — collapse any newlines in tags.
@@ -187,6 +185,10 @@ def export_playlist_m3u(playlist: Playlist | None = None) -> list[str]:
             lines.append(public_media_url(track.audio_file.url))
         return lines
 
+    def _lines_for(candidate: Playlist) -> list[str]:
+        entries = candidate.entries.select_related("track").filter(track__enabled=True).order_by("position")
+        return _lines_for_tracks(entry.track for entry in entries)
+
     if playlist is None:
         # Prefer the default rotation, but never serve an empty list when a
         # populated fallback (or any other enabled playlist) exists — an
@@ -196,5 +198,57 @@ def export_playlist_m3u(playlist: Playlist | None = None) -> list[str]:
             lines = _lines_for(candidate)
             if lines:
                 return lines
-        return []
+        # Last resort: the raw music library — a freshly uploaded track must
+        # air even before anyone builds a playlist around it.
+        return _lines_for_tracks(Track.objects.filter(enabled=True).exclude(audio_file=""))
     return _lines_for(playlist)
+
+
+def request_force_play(track: Track) -> BroadcastState:
+    """Admin "Play now": queue a track to interrupt the stream once.
+
+    The engine claims it via GET /api/internal/force-play/ (which stamps
+    force_started_at); until then a newer request simply replaces it.
+    """
+    if not track.enabled:
+        raise ValueError("Enable the track before forcing it on air.")
+    if not track.audio_file:
+        raise ValueError("This track has no audio file.")
+    state = get_state()
+    state.force_track = track
+    state.force_requested_at = timezone.now()
+    state.force_started_at = None
+    state.save(update_fields=["force_track", "force_requested_at", "force_started_at"])
+    return state
+
+
+def build_force_play_payload() -> dict:
+    """Hand the pending forced track to the engine — claimed on first read.
+
+    Returns {"active": False} when nothing is pending, the track is unusable,
+    or the broadcast is off (a forced track must never break the off-air loop;
+    it airs once the broadcast is switched back on and the engine re-polls).
+    """
+    state = get_state()
+    track = state.force_track
+    if (
+        track is None
+        or state.force_started_at is not None
+        or not track.enabled
+        or not track.audio_file
+        or not StationSettings.get().broadcast_enabled
+    ):
+        return {"active": False}
+
+    from apps.common.utils import public_media_url
+
+    state.force_started_at = timezone.now()
+    state.save(update_fields=["force_started_at"])
+    return {
+        "active": True,
+        "uri": public_media_url(track.audio_file.url),
+        "title": track.title,
+        "artist": track.artist,
+        "duration_seconds": int(track.duration_seconds or 0),
+        "requested_at": state.force_requested_at.isoformat() if state.force_requested_at else "",
+    }

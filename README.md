@@ -141,12 +141,13 @@ Secrets never ship in frontend code; the SPA only reads public config from
 ## Streaming configuration
 
 **Liquidsoap** ([streaming/liquidsoap/radio.liq](streaming/liquidsoap/radio.liq))
-- Playlist: `GET /api/internal/playlist.m3u` (enabled tracks of the default playlist), reloaded every 60s
+- Playlist: `GET /api/internal/playlist.m3u` (enabled tracks of the default playlist; falls back to the whole enabled music library when no playlist has entries), reloaded every 60s
 - Now playing: POSTs title/artist/album/duration/started-at to `/api/internal/ingest/` on every track change
 - Heartbeat: every 15s to `/api/internal/heartbeat/` — marks the engine online (site shows OFFLINE after 90s of silence) and receives the broadcast switch: `broadcast_enabled` + the off-air track URL
 - Ad breaks: polls `/api/internal/ad-break/` every 15s; when the backend opens a break window, it queues the campaign's adverts (capped by the schedule's max break length) and reports actual plays to `/api/internal/ad-played/`. Ads never air while the broadcast is off.
-- Broadcast on/off: the admin toggle (`StationSettings.broadcast_enabled`) puts the engine into the off-air state — it loops the uploaded off-air track (or the local silence file) all day and skips the music rotation; flipping it back on returns to the library within ~15s
-- Recovery: `fallback()` chain (off-air → ads → music → local emergency WAV); playlist/source failures never silence the mount
+- Broadcast on/off: the admin toggle (`StationSettings.broadcast_enabled`) puts the engine into the off-air state — it loops the uploaded off-air track (or the local silence file) all day and skips the music rotation; flipping it back on cuts to the music rotation within ~5s (the engine does not wait for the off-air loop file to finish)
+- Play now: the admin can force any enabled library track onto the stream (`POST /api/admin-panel/tracks/{id}/play_now/`); the engine polls `/api/internal/force-play/` every 5s, interrupts the current item, plays the track exactly once, then the rotation resumes
+- Recovery: `fallback()` chain (force → off-air/music → local emergency WAV); playlist/source failures never silence the mount
 
 **Icecast** ([streaming/icecast/icecast.xml](streaming/icecast/icecast.xml))
 - Mount `/radio`, public, CORS-enabled
@@ -175,7 +176,7 @@ Secrets never ship in frontend code; the SPA only reads public config from
 - **Ad requests** — review, approve/reject submissions
 - **Banner campaigns** — upload banners, set placement/priority/window, pause/activate, payment status, impressions/clicks/CTR
 - **Audio campaigns** — upload adverts, schedules with recurrence + conflict warnings, kill-switch, broadcast logs (played vs missed)
-- **Music library** — upload audio (validated types/sizes), tag metadata, ISRC/label/territories, enable/disable, per-track airing history
+- **Music library** — upload audio (validated types/sizes), tag metadata, ISRC/label/territories, enable/disable, per-track airing history, **Play now** (force a track onto the stream immediately)
 - **Playlists** — create, add/remove/reorder tracks, default + fallback designation
 - **Settings** — station branding, theme colour, broadcast on/off switch, off-air track upload (loops while off)
 - **Users** — role management (super admin only)
@@ -200,6 +201,7 @@ super admin only.
 | POST | `/api/auth/register/` `/login/` `/logout/` | public | Token auth |
 | POST | `/api/internal/ingest/` | `X-Broadcast-Key` | Engine: now playing |
 | POST | `/api/internal/heartbeat/` | `X-Broadcast-Key` | Engine: liveness + broadcast switch + off-air track URL |
+| GET | `/api/internal/force-play/` | `X-Broadcast-Key` | Engine: pending "Play now" track (claimed once) |
 | POST | `/api/internal/ad-break/` | `X-Broadcast-Key` | Engine: break window + advert queue |
 | * | `/api/admin-panel/*` | token + role | Admin operations |
 
@@ -250,7 +252,7 @@ Interactive docs: `/api/` (DRF browsable root) — schema is reachable per-route
 ## Testing
 
 ```bash
-# Backend — 125 tests covering:
+# Backend — 132 tests covering:
 #   campaign eligibility & expired-ad exclusion
 #   schedule conflict detection & break windows
 #   missed-break detection
@@ -258,6 +260,8 @@ Interactive docs: `/api/` (DRF browsable root) — schema is reachable per-route
 #   admin CRUD: upload validation, edits, deletes (tracks + advert spots)
 #   station settings (theme colour, broadcast toggle, off-air track) + init_station bootstrap
 #   broadcast toggle flow: admin PATCH → heartbeat payload → public now-playing
+#   library-first rotation (m3u falls back to enabled tracks when playlists are empty)
+#   play-now: queue → engine claim (once) → broadcast-off deferral
 #   broadcast metadata ingest & status truthfulness
 #   internal endpoint authentication
 #   upload → playlist.m3u → engine ingest → public now-playing chain

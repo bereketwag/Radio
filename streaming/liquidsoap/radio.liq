@@ -115,7 +115,63 @@ end
 
 offair = request.dynamic.list(get_offair)
 
-radio = fallback(track_sensitive=false, [offair, music, emergency])
+# ---------------------------------------------------------------------------
+# Force play ("Play now"): the admin picks a track in the dashboard and it
+# interrupts the current item within seconds. The backend claims the request
+# on the first successful poll, so it airs exactly once and the normal chain
+# resumes after it. Ignored while the broadcast is off (the off-air loop
+# keeps priority; the track airs after the broadcast is switched back on).
+# ---------------------------------------------------------------------------
+force_uri   = ref("")
+force_active = ref(false)
+force_seen   = ref("")
+
+def refresh_force() =
+  try
+    body = http.get(
+      "#{BACKEND_URL}/api/internal/force-play/",
+      headers = auth_header(),
+      timeout = 5.
+    )
+    let json.parse ({active}: {active: bool}) = body
+    if active then
+      let json.parse ({uri, requested_at}: {uri: string, requested_at: string}) = body
+      if uri != "" and requested_at != force_seen() then
+        force_seen := requested_at
+        force_uri := uri
+        force_active := true
+        log.important("force-play queued: #{uri}")
+      end
+    end
+  catch err do
+    log.important("force-play poll failed: #{err}")
+  end
+end
+
+thread.run(every=5., refresh_force)
+
+# Consume-once: handing the request out clears the flag so the track airs a
+# single time, then fallback moves back to off-air/music.
+def get_force() =
+  if force_active() and broadcast_on() then
+    force_active := false
+    [request.create(force_uri())]
+  else
+    []
+  end
+end
+
+force = request.dynamic.list(prefetch=1, get_force)
+
+# Broadcast gate: while off, loop the waiting track (the switch cuts away
+# from it the instant the broadcast turns back on — no waiting for the loop
+# file to finish). While on, straight to the music rotation.
+offair_or_music = switch(track_sensitive=false, [
+  ({not(broadcast_on())}, offair),
+  ({true}, music)
+])
+
+radio = fallback(track_sensitive=false, [force, offair_or_music, emergency])
 
 # ---------------------------------------------------------------------------
 # 2. Now-playing metadata reporting

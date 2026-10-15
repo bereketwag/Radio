@@ -68,6 +68,20 @@ def heartbeat(request):
     })
 
 
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def force_play(request):
+    """Admin "Play now": the engine polls this and plays a pending track once.
+
+    Claimed on first successful read (the backend stamps force_started_at),
+    so a track airs exactly one time and the rotation resumes after it.
+    """
+    if not _key_ok(request):
+        return _reject()
+    return Response(services.build_force_play_payload())
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])

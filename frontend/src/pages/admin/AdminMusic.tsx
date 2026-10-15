@@ -1,4 +1,4 @@
-import { Clock, Disc3, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Clock, Disc3, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react'
 import { FormEvent, useState } from 'react'
 import { api } from '../../lib/api'
 import { AdminSection, EmptyState, ErrorState, Spinner, useAdminFetch } from './useAdminApi'
@@ -66,6 +66,7 @@ export function AdminMusic() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [artworkFile, setArtworkFile] = useState<File | null>(null)
@@ -179,6 +180,20 @@ export function AdminMusic() {
     }
   }
 
+  const playNow = async (t: Track) => {
+    setBusy(true)
+    setFormError(null)
+    setFlash(null)
+    try {
+      const res = await api.post<{ detail: string; title: string }>(`/admin-panel/tracks/${t.id}/play_now/`)
+      setFlash(res.detail)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not queue the track')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const editTitle = editingId ? data?.results.find((t) => t.id === editingId)?.title ?? '' : ''
 
   return (
@@ -250,6 +265,9 @@ export function AdminMusic() {
 
       {formError && (
         <p className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">{formError}</p>
+      )}
+      {flash && (
+        <p className="mb-3 rounded-lg bg-accent/10 px-3 py-2 text-sm text-accent" role="status">{flash}</p>
       )}
 
       {showForm && (
@@ -381,6 +399,16 @@ export function AdminMusic() {
                       <div className="flex flex-wrap items-center justify-end gap-2">
                         {t.audio_url && (
                           <audio controls preload="none" src={t.audio_url} className="h-8" aria-label={`Preview ${t.title}`} />
+                        )}
+                        {t.enabled && t.audio_url && (
+                          <button
+                            className="btn-ghost h-8 !px-3 text-accent"
+                            onClick={() => playNow(t)}
+                            disabled={busy}
+                            title="Interrupt the stream and play this track now"
+                          >
+                            <Play size={13} /> Play now
+                          </button>
                         )}
                         <button className="btn-ghost h-8 !px-3" onClick={() => openEdit(t)} disabled={busy}>
                           <Pencil size={13} /> Edit

@@ -79,6 +79,34 @@ class StationSettingsTests(APITestCase):
         )
         self.assertEqual(StationSettings.get().accent_color, "#169154")
 
+    def test_broadcast_toggle_defaults_on_and_patches(self):
+        resp = self.client.get("/api/admin-panel/station-settings/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["broadcast_enabled"])
+        resp = self.client.patch("/api/admin-panel/station-settings/", {"broadcast_enabled": False})
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(resp.data["broadcast_enabled"])
+        self.assertFalse(StationSettings.get().broadcast_enabled)
+
+    def test_public_station_config_exposes_broadcast_state(self):
+        cfg = StationSettings.get()
+        cfg.broadcast_enabled = False
+        cfg.save()
+        resp = self.client.get("/api/station/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.data["broadcast_enabled"])
+
+    def test_patch_rejects_non_audio_offair_file(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        resp = self.client.patch(
+            "/api/admin-panel/station-settings/",
+            {"fallback_audio": SimpleUploadedFile("notes.txt", b"hello", content_type="text/plain")},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(StationSettings.get().fallback_audio.name)  # nothing stored
+
 
 class InitStationTests(APITestCase):
     def test_fresh_wipes_content_and_creates_only_the_admin(self):

@@ -67,7 +67,55 @@ music = playlist(
 # Local emergency audio keeps the stream alive if the backend is unreachable.
 emergency = single(FALLBACK)
 
-radio = fallback(track_sensitive=false, [music, emergency])
+# ---------------------------------------------------------------------------
+# Broadcast on/off + off-air audio (driven by the backend heartbeat)
+#
+# The station toggle lives in the admin dashboard. The heartbeat response
+# carries `broadcast_enabled` and the off-air track URL; while the broadcast
+# is off the engine loops that track (or the local silence file) all day and
+# never touches the music rotation. Turning the broadcast back on returns to
+# the library at the next track boundary.
+# ---------------------------------------------------------------------------
+broadcast_on = ref(true)
+offair_uri   = ref("")
+
+def refresh_broadcast() =
+  try
+    body = http.post(
+      "#{BACKEND_URL}/api/internal/heartbeat/",
+      data = "{}",
+      headers = list.append([("Content-Type", "application/json")], auth_header()),
+      timeout = 5.
+    )
+    let json.parse ({broadcast_enabled, fallback_uri}: {broadcast_enabled: bool, fallback_uri: string}) = body
+    broadcast_on := broadcast_enabled
+    offair_uri := fallback_uri
+  catch err do
+    # Keep the last known mode on failure — never flip the station on a blip.
+    log.important("broadcast poll failed: #{err}")
+  end
+end
+
+thread.run(every=15., refresh_broadcast)
+
+# Empty while on air (fallback moves on to the music rotation); a looping
+# request while off air, so the off-audio plays all day.
+def get_offair() =
+  if broadcast_on() then
+    []
+  else
+    uri = offair_uri()
+    if uri == "" then
+      [request.create(FALLBACK)]
+    else
+      [request.create(uri)]
+    end
+  end
+end
+
+offair = request.dynamic.list(get_offair)
+
+radio = fallback(track_sensitive=false, [offair, music, emergency])
 
 # ---------------------------------------------------------------------------
 # 2. Now-playing metadata reporting
@@ -96,21 +144,8 @@ end
 
 radio.on_metadata(post_now_playing)
 
-# Heartbeat every 30s marks the engine online in the backend.
-def send_heartbeat() =
-  try
-    ignore(http.post(
-      "#{BACKEND_URL}/api/internal/heartbeat/",
-      data = "{}",
-      headers = list.append([("Content-Type", "application/json")], auth_header()),
-      timeout = 5.
-    ))
-  catch err do
-    log.important("heartbeat failed: #{err}")
-  end
-end
-
-thread.run(every=30., send_heartbeat)
+# Liveness + broadcast mode: refresh_broadcast (above) posts the heartbeat
+# every 15s and updates the on/off refs from the response.
 
 # ---------------------------------------------------------------------------
 # 3. Scheduled audio ad breaks
@@ -218,9 +253,9 @@ ad_branch = fallback(track_sensitive=false, [ad_source, radio])
 
 # Track-safe switching: the outer switch only changes source at track
 # boundaries, so an opening break never cuts a song mid-play (documented
-# "safe point" policy).
+# "safe point" policy). Ads never air while the broadcast is off.
 scheduled = switch(track_sensitive=true, [
-  ({ad_active()}, ad_branch),
+  ({ad_active() and broadcast_on()}, ad_branch),
   ({true}, radio)
 ])
 

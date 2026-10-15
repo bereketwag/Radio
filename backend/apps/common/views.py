@@ -47,6 +47,7 @@ def station_config(request):
             "social": {k: v for k, v in settings.STATION_SOCIAL.items() if v},
             "accent_color": cfg.accent_color,
             "stream_url": settings.STREAM_PUBLIC_URL,
+            "broadcast_enabled": cfg.broadcast_enabled,
         }
     )
 

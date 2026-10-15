@@ -111,11 +111,15 @@ export interface StationSettings {
   contact_email: string
   contact_address: string
   accent_color: string
+  broadcast_enabled: boolean
+  fallback_audio_url: string | null
   updated_at: string
 }
 
 export interface NowPlaying {
   live: boolean
+  /** False = the operator turned the station off; the engine loops the off-air track. */
+  broadcast_enabled: boolean
   server_time: string
   kind: 'music' | 'advert' | 'fallback'
   title: string | null

@@ -35,6 +35,14 @@ class StationSettings(TimeStampedModel):
         max_length=7, default="#169154", validators=[hex_color_validator],
         help_text="Theme colour used for buttons, highlights, and the live indicator.",
     )
+    broadcast_enabled = models.BooleanField(
+        default=True,
+        help_text="Off = the engine leaves the music rotation and loops the off-air audio instead.",
+    )
+    fallback_audio = models.FileField(
+        upload_to="fallback/", blank=True, null=True,
+        help_text="Off-air track played on repeat while the broadcast is off (empty = silence).",
+    )
 
     class Meta:
         verbose_name = "station settings"

@@ -12,7 +12,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.common.models import HealthEvent, record_health_event
+from apps.common.models import HealthEvent, StationSettings, record_health_event
 
 from .models import BroadcastHistory, BroadcastState, Playlist, Track
 
@@ -141,6 +141,7 @@ def build_status_payload() -> dict:
 
     return {
         "live": online,
+        "broadcast_enabled": StationSettings.get().broadcast_enabled,
         "server_time": now.isoformat(),
         "kind": state.kind,
         "title": state.title or None,

@@ -52,12 +52,14 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
   }, [data?.started_at, data?.duration_seconds, serverNow])
 
   const isPlaying = state === 'playing' || state === 'connecting' || state === 'reconnecting'
+  const offAir = data?.broadcast_enabled === false
   const progressPct =
     position !== null && data?.duration_seconds ? (position / data.duration_seconds) * 100 : null
 
   const VolumeIcon = muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2
 
   const statusLabel = (() => {
+    if (offAir) return 'Broadcast off — off-air track'
     switch (state) {
       case 'idle':
         return 'Ready to play'
@@ -78,7 +80,12 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
     errorMessage ??
     (status === 'offline' ? 'The broadcast engine is offline. The stream will resume automatically.' : null)
 
-  const liveBadge = data?.live ? (
+  const liveBadge = offAir ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning">
+      <span className="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden />
+      OFF AIR
+    </span>
+  ) : data?.live ? (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent">
       <span className="h-1.5 w-1.5 rounded-full bg-accent animate-live-pulse" aria-hidden />
       LIVE

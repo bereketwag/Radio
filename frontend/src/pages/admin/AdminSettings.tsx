@@ -1,4 +1,4 @@
-import { Palette, Save } from 'lucide-react'
+import { Palette, Power, Save, Trash2, Upload } from 'lucide-react'
 import { FormEvent, useEffect, useState } from 'react'
 import { api, StationSettings } from '../../lib/api'
 import { refreshStation } from '../../lib/useStation'
@@ -29,6 +29,9 @@ export function AdminSettings() {
   const [form, setForm] = useState({ ...emptyForm })
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
+  const [busyBroadcast, setBusyBroadcast] = useState(false)
+  const [offairFile, setOffairFile] = useState<File | null>(null)
+  const [busyOffair, setBusyOffair] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -75,6 +78,64 @@ export function AdminSettings() {
     }
   }
 
+  const toggleBroadcast = async () => {
+    if (!data) return
+    setBusyBroadcast(true)
+    setFlash(null)
+    setError(null)
+    try {
+      const saved = await api.patch<StationSettings>('/admin-panel/station-settings/', {
+        broadcast_enabled: !data.broadcast_enabled,
+      })
+      setData(saved)
+      setFlash(
+        saved.broadcast_enabled
+          ? 'Broadcast is ON — the engine returns to the music rotation within ~15 seconds.'
+          : 'Broadcast is OFF — the off-air track is now looping on the stream.',
+      )
+      await refreshStation()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not change the broadcast state')
+    } finally {
+      setBusyBroadcast(false)
+    }
+  }
+
+  const uploadOffair = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!offairFile) return
+    setBusyOffair(true)
+    setFlash(null)
+    setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('fallback_audio', offairFile)
+      const saved = await api.patchForm<StationSettings>('/admin-panel/station-settings/', fd)
+      setData(saved)
+      setOffairFile(null)
+      setFlash('Off-air track updated. The engine picks it up within ~15 seconds.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setBusyOffair(false)
+    }
+  }
+
+  const removeOffair = async () => {
+    setBusyOffair(true)
+    setFlash(null)
+    setError(null)
+    try {
+      const saved = await api.patch<StationSettings>('/admin-panel/station-settings/', { fallback_audio: null })
+      setData(saved)
+      setFlash('Off-air track removed — the stream plays silence while the broadcast is off.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove the off-air track')
+    } finally {
+      setBusyOffair(false)
+    }
+  }
+
   if (loading) return <Spinner />
   if (!data && error) return <ErrorState message={error} onRetry={() => setNonce((n) => n + 1)} />
 
@@ -85,6 +146,61 @@ export function AdminSettings() {
       title="Station settings"
       description="Branding and theme colour used across the public site and the player."
     >
+      {data && (
+        <div className="card mb-6 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">Broadcast</p>
+              <p className="mt-1 flex items-center gap-2 text-sm font-semibold">
+                <Power size={15} className={data.broadcast_enabled ? 'text-accent' : 'text-warning'} />
+                {data.broadcast_enabled ? 'On air — music rotation is playing' : 'Off air — off-air track is looping'}
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                Turning it off never stops the stream: listeners keep hearing the off-air track
+                (all day) until you switch back on. Ads never air while off air.
+              </p>
+            </div>
+            <button
+              className={data.broadcast_enabled ? 'btn-ghost' : 'btn-primary'}
+              disabled={busyBroadcast}
+              onClick={toggleBroadcast}
+            >
+              <Power size={15} />
+              {busyBroadcast ? 'Switching…' : data.broadcast_enabled ? 'Turn broadcast off' : 'Turn broadcast on'}
+            </button>
+          </div>
+
+          <form onSubmit={uploadOffair} className="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Off-air track</p>
+              {data.fallback_audio_url ? (
+                <audio controls preload="none" src={data.fallback_audio_url} className="mt-2 h-8" aria-label="Off-air track preview" />
+              ) : (
+                <p className="mt-1 text-xs text-muted">
+                  None uploaded — the stream plays silence while off air. Upload a track (e.g. classical)
+                  to have it play all day instead.
+                </p>
+              )}
+            </div>
+            <input
+              className="input !w-auto"
+              type="file"
+              accept=".mp3,.ogg,.opus,.flac,.m4a,.aac,.wav"
+              onChange={(e) => setOffairFile(e.target.files?.[0] ?? null)}
+              aria-label="Choose off-air audio file"
+            />
+            <button className="btn-primary" type="submit" disabled={busyOffair || !offairFile}>
+              <Upload size={15} /> {busyOffair ? 'Uploading…' : 'Set off-air track'}
+            </button>
+            {data.fallback_audio_url && (
+              <button className="btn-ghost text-danger" type="button" disabled={busyOffair} onClick={removeOffair}>
+                <Trash2 size={15} /> Remove
+              </button>
+            )}
+          </form>
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <form onSubmit={submit} className="card grid gap-4 p-5">
           {flash && (

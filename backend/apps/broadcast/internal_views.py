@@ -49,10 +49,23 @@ def ingest(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def heartbeat(request):
+    """Liveness ping that doubles as the engine's broadcast-mode poll.
+
+    The response tells the engine whether the station is on air (music
+    rotation) or off (loop the off-air audio) and which file to play.
+    """
     if not _key_ok(request):
         return _reject()
     services.heartbeat(request.data.get("kind", "music"))
-    return Response({"ok": True})
+    from apps.common.models import StationSettings
+    from apps.common.utils import public_media_url
+
+    cfg = StationSettings.get()
+    return Response({
+        "ok": True,
+        "broadcast_enabled": cfg.broadcast_enabled,
+        "fallback_uri": public_media_url(cfg.fallback_audio.url) if cfg.fallback_audio else "",
+    })
 
 
 @api_view(["POST"])

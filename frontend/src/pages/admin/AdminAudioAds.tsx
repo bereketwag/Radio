@@ -93,7 +93,7 @@ export function AdminAudioAds() {
   const [scheduleForm, setScheduleForm] = useState({
     recurrence: 'daily',
     starts_at: '',
-    local_time: '12:00',
+    times: ['12:00'],
     weekday: '0',
     max_break_seconds: '60',
   })
@@ -265,22 +265,36 @@ export function AdminAudioAds() {
     setBusy(true)
     setFormError(null)
     try {
-      const payload: Record<string, unknown> = {
+      const base = {
         recurrence: scheduleForm.recurrence,
         max_break_seconds: Number(scheduleForm.max_break_seconds),
       }
       if (scheduleForm.recurrence === 'once') {
-        payload.starts_at = new Date(scheduleForm.starts_at).toISOString()
+        const res = await api.post<{ conflicts: { with_schedule_id: string; overlap_start: string }[] }>(
+          `/admin-panel/audio-campaigns/${campaignId}/schedules/`,
+          { ...base, starts_at: new Date(scheduleForm.starts_at).toISOString() },
+        )
+        setConflicts((prev) => ({ ...prev, [campaignId]: res.conflicts }))
       } else {
-        payload.local_time = scheduleForm.local_time
-        payload.starts_at = new Date().toISOString()
-        if (scheduleForm.recurrence === 'weekly') payload.weekday = Number(scheduleForm.weekday)
+        // One schedule per listed time — the advert plays again at each of them.
+        const times = scheduleForm.times.map((t) => t.trim()).filter(Boolean)
+        const merged: { with_schedule_id: string; overlap_start: string }[] = []
+        for (const localTime of times) {
+          const payload: Record<string, unknown> = {
+            ...base,
+            local_time: localTime,
+            starts_at: new Date().toISOString(),
+          }
+          if (scheduleForm.recurrence === 'weekly') payload.weekday = Number(scheduleForm.weekday)
+          const res = await api.post<{ conflicts: { with_schedule_id: string; overlap_start: string }[] }>(
+            `/admin-panel/audio-campaigns/${campaignId}/schedules/`,
+            payload,
+          )
+          merged.push(...(res.conflicts ?? []))
+        }
+        setConflicts((prev) => ({ ...prev, [campaignId]: merged }))
+        setScheduleForm((prev) => ({ ...prev, times: ['12:00'] }))
       }
-      const res = await api.post<{ conflicts: { with_schedule_id: string; overlap_start: string }[] }>(
-        `/admin-panel/audio-campaigns/${campaignId}/schedules/`,
-        payload,
-      )
-      setConflicts((prev) => ({ ...prev, [campaignId]: res.conflicts }))
       setShowScheduleFor(null)
       refresh()
     } catch (err) {
@@ -690,9 +704,43 @@ export function AdminAudioAds() {
                       </div>
                     ) : (
                       <>
-                        <div>
-                          <label className="label">Station-local time</label>
-                          <input className="input" type="time" required value={scheduleForm.local_time} onChange={(e) => setScheduleForm({ ...scheduleForm, local_time: e.target.value })} />
+                        <div className="sm:col-span-2">
+                          <label className="label">Play at (station-local time)</label>
+                          {scheduleForm.times.map((t, i) => (
+                            <div key={i} className="mt-1 flex gap-2">
+                              <input
+                                className="input"
+                                type="time"
+                                required
+                                value={t}
+                                onChange={(e) => {
+                                  const next = [...scheduleForm.times]
+                                  next[i] = e.target.value
+                                  setScheduleForm({ ...scheduleForm, times: next })
+                                }}
+                              />
+                              {scheduleForm.times.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="btn-ghost h-10 shrink-0 !px-2 text-danger"
+                                  aria-label="Remove this time"
+                                  onClick={() =>
+                                    setScheduleForm({ ...scheduleForm, times: scheduleForm.times.filter((_, j) => j !== i) })
+                                  }
+                                >
+                                  <X size={14} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            className="btn-ghost mt-2 !px-2 text-xs"
+                            onClick={() => setScheduleForm({ ...scheduleForm, times: [...scheduleForm.times, '12:00'] })}
+                          >
+                            <Plus size={13} /> Add another time
+                          </button>
+                          <p className="mt-1 text-xs text-muted">The advert airs again at every listed time.</p>
                         </div>
                         {scheduleForm.recurrence === 'weekly' && (
                           <div>

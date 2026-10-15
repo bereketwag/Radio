@@ -4,6 +4,7 @@ import { AdminSection, ErrorState, Spinner, StatusBadge, useAdminFetch } from '.
 interface Overview {
   broadcast: {
     live: boolean
+    broadcast_enabled: boolean
     title: string | null
     artist: string | null
     kind: string
@@ -75,7 +76,11 @@ export function AdminOverview() {
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-muted">Broadcast</p>
             <div className="mt-1 flex items-center gap-2">
-              {data.broadcast.live ? (
+              {data.broadcast.broadcast_enabled === false ? (
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-warning">
+                  <AlertTriangle size={15} /> Off air — off-air track looping
+                </span>
+              ) : data.broadcast.live ? (
                 <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent">
                   <CheckCircle2 size={15} /> Live
                 </span>

@@ -4,6 +4,11 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../../lib/api'
 import { AdminSection, EmptyState, ErrorState, Spinner, StatusBadge, useAdminFetch } from './useAdminApi'
 
+interface Advertiser {
+  id: string
+  name: string
+}
+
 interface AdRequest {
   id: string
   business_name: string
@@ -53,13 +58,20 @@ export function AdminRequests() {
     setBusyId(r.id)
     setNotice(null)
     try {
-      const advertiser = await api.post<{ id: string }>('/admin-panel/advertisers/', {
-        name: r.business_name,
-        email: r.email,
-        contact_name: r.contact_name,
-        phone: r.phone,
-        website: r.website,
-      })
+      // Reuse an advertiser with this name if one exists (a retry after an
+      // interrupted first attempt must not create a duplicate).
+      const existing = await api.get<Advertiser[] | { results: Advertiser[] }>('/admin-panel/advertisers/')
+      const list = Array.isArray(existing) ? existing : (existing.results ?? [])
+      const found = list.find((a) => a.name === r.business_name)
+      const advertiser =
+        found ??
+        (await api.post<{ id: string }>('/admin-panel/advertisers/', {
+          name: r.business_name,
+          email: r.email,
+          contact_name: r.contact_name,
+          phone: r.phone,
+          website: r.website,
+        }))
       const base = {
         advertiser: advertiser.id,
         name: r.business_name,

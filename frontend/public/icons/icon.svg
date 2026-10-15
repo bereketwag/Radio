@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Aurora Radio">
+  <rect width="512" height="512" rx="112" fill="#101210"/>
+  <g fill="none" stroke="#2FB870" stroke-width="22" stroke-linecap="round">
+    <circle cx="256" cy="256" r="46" fill="#2FB870" stroke="none"/>
+    <path d="M176 176a113 113 0 0 0 0 160"/>
+    <path d="M336 176a113 113 0 0 1 0 160"/>
+    <path d="M126 126a184 184 0 0 0 0 260" opacity="0.55"/>
+    <path d="M386 126a184 184 0 0 1 0 260" opacity="0.55"/>
+  </g>
+</svg>

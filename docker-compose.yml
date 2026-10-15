@@ -1,0 +1,91 @@
+# ---------------------------------------------------------------------------
+# Aurora Radio — full local stack
+#
+#   docker compose up --build
+#
+# Services:
+#   db          PostgreSQL
+#   backend     Django + DRF (API, admin, metadata ingest)
+#   frontend    Vite build served by nginx (proxies /api, /media, /live)
+#   icecast     Streaming server (public: 8000)
+#   liquidsoap  Broadcast engine (connects to backend + icecast)
+#
+# The broadcast engine runs independently of the website: stopping
+# `frontend` or `backend` does not stop the audio; stopping `liquidsoap`
+# or `icecast` stops audio but the site keeps reporting honestly that the
+# stream is offline.
+# ---------------------------------------------------------------------------
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aurora}
+      POSTGRES_USER: ${POSTGRES_USER:-aurora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aurora}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-aurora}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-aurora}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check", "--deploy", "--fail-level", "ERROR"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - backend
+      - icecast
+
+  icecast:
+    build: ./streaming/icecast
+    environment:
+      ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set ICECAST_SOURCE_PASSWORD}
+      ICECAST_ADMIN_PASSWORD: ${ICECAST_ADMIN_PASSWORD:?set ICECAST_ADMIN_PASSWORD}
+      ICECAST_RELAY_PASSWORD: ${ICECAST_RELAY_PASSWORD:-relay}
+      ICECAST_HOSTNAME: ${ICECAST_HOSTNAME:-localhost}
+    ports:
+      # Host 8001 so a locally-running Django dev server can keep 8000.
+      # Containers still reach Icecast on icecast:8000 internally.
+      - "${ICECAST_PORT:-8001}:8000"
+
+  liquidsoap:
+    build: ./streaming/liquidsoap
+    environment:
+      # Local dev (.env sets LIQ_BACKEND_URL=http://host.docker.internal:8000)
+      # points the engine at the Django runserver on the host; full-stack
+      # compose falls back to the backend container.
+      BACKEND_URL: ${LIQ_BACKEND_URL:-http://backend:8000}
+      BROADCAST_KEY: ${BROADCAST_API_KEY:?set BROADCAST_API_KEY}
+      ICECAST_HOST: icecast
+      ICECAST_PORT: "8000"
+      ICECAST_PASSWORD: ${ICECAST_SOURCE_PASSWORD}
+      MOUNT: radio
+    volumes:
+      - media_data:/media:ro  # read uploaded tracks directly
+    depends_on:
+      - icecast
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  media_data:

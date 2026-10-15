@@ -1,0 +1,38 @@
+# Secrets — never commit
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Django
+db.sqlite3
+staticfiles/
+
+# Uploaded media (tracks, ads, banners) — lives on the server, not in git
+media/
+
+# Local music library & tool artifacts at repo root
+/audio/
+.freebuff/
+
+# Node / frontend
+node_modules/
+dist/
+*.local
+
+# Editors & OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*

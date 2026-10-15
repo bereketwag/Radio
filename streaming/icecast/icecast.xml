@@ -1,0 +1,62 @@
+<!--
+  Aurora Radio — Icecast 2 configuration.
+  Passwords and hostnames come from environment variables via envsubst at
+  container start (see streaming/icecast/docker-entrypoint.sh).
+-->
+<icecast>
+    <location>Earth</location>
+    <admin>admin@auroraradio.example</admin>
+
+    <limits>
+        <clients>100</clients>
+        <source-timeout>30</source-timeout>
+        <queue-size>524288</queue-size>
+        <client-timeout>60</client-timeout>
+        <header-timeout>15</header-timeout>
+        <ice-login-timeout>30</ice-login-timeout>
+    </limits>
+
+    <authentication>
+        <source-password>${ICECAST_SOURCE_PASSWORD}</source-password>
+        <relay-password>${ICECAST_RELAY_PASSWORD}</relay-password>
+        <admin-user>admin</admin-user>
+        <admin-password>${ICECAST_ADMIN_PASSWORD}</admin-password>
+    </authentication>
+
+    <hostname>${ICECAST_HOSTNAME}</hostname>
+
+    <listen-socket>
+        <port>8000</port>
+        <bind-address>0.0.0.0</bind-address>
+    </listen-socket>
+
+    <http-headers>
+        <header name="Access-Control-Allow-Origin" value="*" />
+    </http-headers>
+
+    <mount type="normal">
+        <!-- Must match ICECAST_MOUNT / Liquidsoap's mount (default: radio). -->
+        <mount-name>/radio</mount-name>
+        <public>1</public>
+    </mount>
+
+    <fileserve>1</fileserve>
+
+    <paths>
+        <!-- Alpine's icecast package installs web/admin under /usr/share/icecast. -->
+        <basedir>/usr/share/icecast</basedir>
+        <logdir>/var/log/icecast2</logdir>
+        <webroot>/usr/share/icecast/web</webroot>
+        <adminroot>/usr/share/icecast/admin</adminroot>
+        <alias source="/" destination="/status.xsl" />
+    </paths>
+
+    <logging>
+        <accesslog>access.log</accesslog>
+        <errorlog>error.log</errorlog>
+        <loglevel>3</loglevel>
+        <logsize>10000</logsize>
+    </logging>
+
+    <chroot>0</chroot>
+</icecast>

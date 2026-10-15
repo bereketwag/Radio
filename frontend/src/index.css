@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   Design tokens — warm, restrained, premium.
+   Light: warm off-white page, white surfaces, near-black ink, one green accent.
+   Dark: deep charcoal, slightly lighter surfaces, high-contrast type.
+--------------------------------------------------------------------------- */
+:root {
+  --c-page: 250 249 245; /* #FAF9F5 warm off-white */
+  --c-surface: 255 255 255;
+  --c-surface-2: 246 245 241;
+  --c-ink: 18 20 18;
+  --c-muted: 108 112 106;
+  --c-accent: 22 145 84; /* restrained green */
+  --c-accent-ink: 255 255 255;
+  --c-line: 230 229 223;
+  --c-danger: 185 44 44;
+  --c-warning: 168 116 12;
+  --shadow-card: 0 1px 2px rgb(18 20 18 / 0.04), 0 8px 24px rgb(18 20 18 / 0.05);
+}
+
+.dark {
+  --c-page: 16 18 16; /* deep charcoal, faintly green */
+  --c-surface: 25 28 25;
+  --c-surface-2: 32 36 32;
+  --c-ink: 242 243 240;
+  --c-muted: 156 162 154;
+  --c-accent: 47 184 112;
+  --c-accent-ink: 12 20 15;
+  --c-line: 43 48 43;
+  --c-danger: 235 110 110;
+  --c-warning: 226 178 84;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px rgb(0 0 0 / 0.28);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-page text-ink font-sans antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: rgb(var(--c-accent) / 0.22);
+  }
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-accent));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  input,
+  textarea,
+  select {
+    @apply bg-surface text-ink;
+  }
+}
+
+@layer components {
+  .shell {
+    @apply mx-auto w-full max-w-shell px-4 sm:px-6 lg:px-8;
+  }
+  .card {
+    @apply rounded-2xl border border-line bg-surface;
+    box-shadow: var(--shadow-card);
+  }
+  .player-card {
+    @apply relative overflow-hidden rounded-2xl border border-line;
+    background: rgb(var(--c-surface) / 0.72);
+    backdrop-filter: blur(22px) saturate(1.5);
+    -webkit-backdrop-filter: blur(22px) saturate(1.5);
+    box-shadow: var(--shadow-card);
+  }
+  /* Glass sheen above the card's spectrum canvas, below its content. */
+  .player-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    border-radius: inherit;
+    background: linear-gradient(160deg, rgb(255 255 255 / 0.12) 0%, rgb(255 255 255 / 0) 38%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28);
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-accent-ink hover:opacity-90;
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-transparent text-ink hover:bg-surface-2;
+  }
+  .input {
+    @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-ink;
+  }
+  .hint {
+    @apply mt-1 text-xs text-muted;
+  }
+}
+
+/* Hide scrollbar for horizontal nav strips without losing scrollability */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

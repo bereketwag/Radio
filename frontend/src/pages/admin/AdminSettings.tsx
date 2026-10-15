@@ -1,6 +1,6 @@
-import { Palette, Power, Save, Trash2, Upload } from 'lucide-react'
+import { ListMusic, Palette, Power, Save, Trash2, Upload } from 'lucide-react'
 import { FormEvent, useEffect, useState } from 'react'
-import { api, StationSettings } from '../../lib/api'
+import { api, OffAirTrack, StationSettings } from '../../lib/api'
 import { refreshStation } from '../../lib/useStation'
 import { AdminSection, ErrorState, Spinner } from './useAdminApi'
 
@@ -30,7 +30,9 @@ export function AdminSettings() {
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const [busyBroadcast, setBusyBroadcast] = useState(false)
+  const [offAirTracks, setOffAirTracks] = useState<OffAirTrack[]>([])
   const [offairFile, setOffairFile] = useState<File | null>(null)
+  const [offairTitle, setOffairTitle] = useState('')
   const [busyOffair, setBusyOffair] = useState(false)
 
   useEffect(() => {
@@ -55,6 +57,10 @@ export function AdminSettings() {
         if (alive) setError(err instanceof Error ? err.message : 'Failed to load settings')
       })
       .finally(() => alive && setLoading(false))
+    api
+      .get<OffAirTrack[]>('/admin-panel/off-air-tracks/')
+      .then((res) => alive && setOffAirTracks(res))
+      .catch(() => alive && setOffAirTracks([]))
     return () => {
       alive = false
     }
@@ -90,8 +96,8 @@ export function AdminSettings() {
       setData(saved)
       setFlash(
         saved.broadcast_enabled
-          ? 'Broadcast is ON — the engine returns to the music rotation within ~15 seconds.'
-          : 'Broadcast is OFF — the off-air track is now looping on the stream.',
+          ? 'Broadcast is ON — the engine returns to the music rotation within ~5 seconds.'
+          : 'Broadcast is OFF — your waiting songs are now looping on the stream.',
       )
       await refreshStation()
     } catch (err) {
@@ -109,11 +115,13 @@ export function AdminSettings() {
     setError(null)
     try {
       const fd = new FormData()
-      fd.append('fallback_audio', offairFile)
-      const saved = await api.patchForm<StationSettings>('/admin-panel/station-settings/', fd)
-      setData(saved)
+      fd.append('audio_file', offairFile)
+      if (offairTitle.trim()) fd.append('title', offairTitle.trim())
+      const saved = await api.upload<OffAirTrack>('/admin-panel/off-air-tracks/', fd)
+      setOffAirTracks((prev) => [...prev, saved])
       setOffairFile(null)
-      setFlash('Off-air track updated. The engine picks it up within ~15 seconds.')
+      setOffairTitle('')
+      setFlash('Waiting song added. The engine picks it up within ~15 seconds.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
@@ -121,16 +129,16 @@ export function AdminSettings() {
     }
   }
 
-  const removeOffair = async () => {
+  const removeOffair = async (id: string) => {
     setBusyOffair(true)
     setFlash(null)
     setError(null)
     try {
-      const saved = await api.patch<StationSettings>('/admin-panel/station-settings/', { fallback_audio: null })
-      setData(saved)
-      setFlash('Off-air track removed — the stream plays silence while the broadcast is off.')
+      await api.del(`/admin-panel/off-air-tracks/${id}/`)
+      setOffAirTracks((prev) => prev.filter((t) => t.id !== id))
+      setFlash('Waiting song removed.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not remove the off-air track')
+      setError(err instanceof Error ? err.message : 'Could not remove the song')
     } finally {
       setBusyOffair(false)
     }
@@ -153,11 +161,11 @@ export function AdminSettings() {
               <p className="text-xs font-medium uppercase tracking-wide text-muted">Broadcast</p>
               <p className="mt-1 flex items-center gap-2 text-sm font-semibold">
                 <Power size={15} className={data.broadcast_enabled ? 'text-accent' : 'text-warning'} />
-                {data.broadcast_enabled ? 'On air — music rotation is playing' : 'Off air — off-air track is looping'}
+                {data.broadcast_enabled ? 'On air — music rotation is playing' : 'Off air — waiting songs are looping'}
               </p>
               <p className="mt-1 text-xs text-muted">
-                Turning it off never stops the stream: listeners keep hearing the off-air track
-                (all day) until you switch back on. Ads never air while off air.
+                Turning it off never stops the stream: listeners keep hearing your waiting songs
+                (all day, in order) until you switch back on. Ads never air while off air.
               </p>
             </div>
             <button
@@ -170,34 +178,56 @@ export function AdminSettings() {
             </button>
           </div>
 
-          <form onSubmit={uploadOffair} className="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-4">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Off-air track</p>
-              {data.fallback_audio_url ? (
-                <audio controls preload="none" src={data.fallback_audio_url} className="mt-2 h-8" aria-label="Off-air track preview" />
-              ) : (
-                <p className="mt-1 text-xs text-muted">
-                  None uploaded — the stream plays silence while off air. Upload a track (e.g. classical)
-                  to have it play all day instead.
-                </p>
-              )}
-            </div>
-            <input
-              className="input !w-auto"
-              type="file"
-              accept=".mp3,.ogg,.opus,.flac,.m4a,.aac,.wav"
-              onChange={(e) => setOffairFile(e.target.files?.[0] ?? null)}
-              aria-label="Choose off-air audio file"
-            />
-            <button className="btn-primary" type="submit" disabled={busyOffair || !offairFile}>
-              <Upload size={15} /> {busyOffair ? 'Uploading…' : 'Set off-air track'}
-            </button>
-            {data.fallback_audio_url && (
-              <button className="btn-ghost text-danger" type="button" disabled={busyOffair} onClick={removeOffair}>
-                <Trash2 size={15} /> Remove
-              </button>
+          <div className="mt-4 border-t border-line pt-4">
+            <p className="flex items-center gap-2 text-sm font-medium">
+              <ListMusic size={15} /> Waiting songs (play while the broadcast is off)
+            </p>
+            {offAirTracks.length === 0 ? (
+              <p className="mt-1 text-xs text-muted">
+                None uploaded yet — while off air the stream plays silence. Upload the song(s) you
+                want listeners to hear (e.g. classical); they loop in order, all day.
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {offAirTracks.map((t, i) => (
+                  <li key={t.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-surface-2 px-3 py-2">
+                    <span className="w-5 text-center text-xs tabular-nums text-muted">{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm">{t.title || 'Untitled'}</span>
+                    {t.audio_url && (
+                      <audio controls preload="none" src={t.audio_url} className="h-8" aria-label={`Preview ${t.title}`} />
+                    )}
+                    <button
+                      className="btn-ghost h-8 !px-2 text-danger"
+                      disabled={busyOffair}
+                      onClick={() => removeOffair(t.id)}
+                      aria-label={`Remove ${t.title}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
-          </form>
+            <form onSubmit={uploadOffair} className="mt-3 flex flex-wrap items-end gap-3">
+              <input
+                className="input !w-auto"
+                placeholder="Title (optional)"
+                value={offairTitle}
+                onChange={(e) => setOffairTitle(e.target.value)}
+                aria-label="Waiting song title"
+              />
+              <input
+                className="input !w-auto"
+                type="file"
+                accept=".mp3,.ogg,.opus,.flac,.m4a,.aac,.wav"
+                onChange={(e) => setOffairFile(e.target.files?.[0] ?? null)}
+                aria-label="Choose waiting song file"
+              />
+              <button className="btn-primary" type="submit" disabled={busyOffair || !offairFile}>
+                <Upload size={15} /> {busyOffair ? 'Uploading…' : 'Add waiting song'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
 

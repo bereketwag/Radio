@@ -82,6 +82,32 @@ class PlaylistEntry(models.Model):
         return f"{self.playlist.name} #{self.position}: {self.track}"
 
 
+class OffAirTrack(TimeStampedModel):
+    """A waiting song: loops on the stream while the broadcast is off.
+
+    Managed from the admin Settings page (like a mini music library that
+    only airs during the off-air state). The engine reloads the off-air m3u
+    every 15s, so uploads and removals apply without a restart.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=255, blank=True, default="")
+    audio_file = models.FileField(upload_to="offair/%Y/%m/", max_length=500)
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["position", "created_at"]
+
+    def __str__(self) -> str:
+        return self.title or self.audio_file.name
+
+    def delete(self, *args, **kwargs):
+        file = self.audio_file
+        super().delete(*args, **kwargs)
+        if file:
+            file.delete(save=False)
+
+
 class BroadcastState(models.Model):
     """Singleton mirror of the engine's current output.
 

@@ -53,13 +53,15 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
 
   const isPlaying = state === 'playing' || state === 'connecting' || state === 'reconnecting'
   const offAir = data?.broadcast_enabled === false
+  const advert = !offAir && data?.kind === 'advert'
   const progressPct =
     position !== null && data?.duration_seconds ? (position / data.duration_seconds) * 100 : null
 
   const VolumeIcon = muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2
 
   const statusLabel = (() => {
-    if (offAir) return 'Broadcast off — off-air track'
+    if (offAir) return 'Broadcast off — waiting songs'
+    if (advert) return 'Advertisement'
     switch (state) {
       case 'idle':
         return 'Ready to play'
@@ -84,6 +86,11 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
     <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning">
       <span className="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden />
       OFF AIR
+    </span>
+  ) : advert ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-danger/10 px-2.5 py-1 text-xs font-semibold text-danger">
+      <span className="h-1.5 w-1.5 rounded-full bg-danger animate-live-pulse" aria-hidden />
+      ADVERT
     </span>
   ) : data?.live ? (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent">

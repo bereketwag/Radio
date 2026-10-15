@@ -96,17 +96,6 @@ class StationSettingsTests(APITestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(resp.data["broadcast_enabled"])
 
-    def test_patch_rejects_non_audio_offair_file(self):
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
-        resp = self.client.patch(
-            "/api/admin-panel/station-settings/",
-            {"fallback_audio": SimpleUploadedFile("notes.txt", b"hello", content_type="text/plain")},
-            format="multipart",
-        )
-        self.assertEqual(resp.status_code, 400)
-        self.assertFalse(StationSettings.get().fallback_audio.name)  # nothing stored
-
 
 class InitStationTests(APITestCase):
     def test_fresh_wipes_content_and_creates_only_the_admin(self):

@@ -145,7 +145,7 @@ Secrets never ship in frontend code; the SPA only reads public config from
 - Now playing: POSTs title/artist/album/duration/started-at to `/api/internal/ingest/` on every track change
 - Heartbeat: every 15s to `/api/internal/heartbeat/` — marks the engine online (site shows OFFLINE after 90s of silence) and receives the broadcast switch: `broadcast_enabled` + the off-air track URL
 - Ad breaks: polls `/api/internal/ad-break/` every 15s; when the backend opens a break window, it queues the campaign's adverts (capped by the schedule's max break length) and reports actual plays to `/api/internal/ad-played/`. Ads never air while the broadcast is off.
-- Broadcast on/off: the admin toggle (`StationSettings.broadcast_enabled`) puts the engine into the off-air state — it loops the uploaded off-air track (or the local silence file) all day and skips the music rotation; flipping it back on cuts to the music rotation within ~5s (the engine does not wait for the off-air loop file to finish)
+- Broadcast on/off: the admin toggle (`StationSettings.broadcast_enabled`) puts the engine into the off-air state — it loops the uploaded waiting songs (`/api/internal/offair.m3u`, reloaded every 15s) all day and skips the music rotation; with no waiting songs it plays the local silence file. Flipping it back on cuts to the music rotation within ~5s (the engine does not wait for the current off-air song to finish)
 - Play now: the admin can force any enabled library track onto the stream (`POST /api/admin-panel/tracks/{id}/play_now/`); the engine polls `/api/internal/force-play/` every 5s, interrupts the current item, plays the track exactly once, then the rotation resumes
 - Recovery: `fallback()` chain (force → off-air/music → local emergency WAV); playlist/source failures never silence the mount
 
@@ -178,7 +178,7 @@ Secrets never ship in frontend code; the SPA only reads public config from
 - **Audio campaigns** — upload adverts, schedules with recurrence + conflict warnings, kill-switch, broadcast logs (played vs missed)
 - **Music library** — upload audio (validated types/sizes), tag metadata, ISRC/label/territories, enable/disable, per-track airing history, **Play now** (force a track onto the stream immediately)
 - **Playlists** — create, add/remove/reorder tracks, default + fallback designation
-- **Settings** — station branding, theme colour, broadcast on/off switch, off-air track upload (loops while off)
+- **Settings** — station branding, theme colour, broadcast on/off switch, waiting songs (multiple off-air uploads that loop while the broadcast is off)
 - **Users** — role management (super admin only)
 - **System log** — audit trail + broadcast health events
 
@@ -202,6 +202,7 @@ super admin only.
 | POST | `/api/internal/ingest/` | `X-Broadcast-Key` | Engine: now playing |
 | POST | `/api/internal/heartbeat/` | `X-Broadcast-Key` | Engine: liveness + broadcast switch + off-air track URL |
 | GET | `/api/internal/force-play/` | `X-Broadcast-Key` | Engine: pending "Play now" track (claimed once) |
+| GET | `/api/internal/offair.m3u` | `X-Broadcast-Key` | Engine: waiting songs while the broadcast is off |
 | POST | `/api/internal/ad-break/` | `X-Broadcast-Key` | Engine: break window + advert queue |
 | * | `/api/admin-panel/*` | token + role | Admin operations |
 
@@ -252,15 +253,16 @@ Interactive docs: `/api/` (DRF browsable root) — schema is reachable per-route
 ## Testing
 
 ```bash
-# Backend — 132 tests covering:
+# Backend — 136 tests covering:
 #   campaign eligibility & expired-ad exclusion
 #   schedule conflict detection & break windows
 #   missed-break detection
 #   role permissions on every admin surface
 #   admin CRUD: upload validation, edits, deletes (tracks + advert spots)
-#   station settings (theme colour, broadcast toggle, off-air track) + init_station bootstrap
+#   station settings (theme colour, broadcast toggle) + init_station bootstrap
 #   broadcast toggle flow: admin PATCH → heartbeat payload → public now-playing
 #   library-first rotation (m3u falls back to enabled tracks when playlists are empty)
+#   waiting songs: upload → off-air m3u → engine loop, removals, validation
 #   play-now: queue → engine claim (once) → broadcast-off deferral
 #   broadcast metadata ingest & status truthfulness
 #   internal endpoint authentication

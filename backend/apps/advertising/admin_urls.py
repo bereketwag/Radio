@@ -14,6 +14,7 @@ router.register("audio-campaigns", admin_views.AudioCampaignViewSet, basename="a
 router.register("ad-schedules", admin_views.AdScheduleViewSet, basename="ad-schedule")
 router.register("ad-break-logs", admin_views.AdBreakLogViewSet, basename="ad-break-log")
 router.register("tracks", admin_views.TrackViewSet, basename="track")
+router.register("off-air-tracks", admin_views.OffAirTrackViewSet, basename="off-air-track")
 router.register("playlists", admin_views.PlaylistViewSet, basename="playlist")
 router.register("users", admin_views.AdminUserViewSet, basename="admin-user")
 

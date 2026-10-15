@@ -5,7 +5,7 @@ from rest_framework import serializers
 from apps.common.utils import probe_stored_audio_duration
 from apps.common.validators import validate_audio_upload, validate_image_upload
 
-from .models import BroadcastHistory, Playlist, PlaylistEntry, Track
+from .models import BroadcastHistory, OffAirTrack, Playlist, PlaylistEntry, Track
 
 
 class TerritoriesField(serializers.JSONField):
@@ -142,3 +142,20 @@ class PlaylistSerializer(serializers.ModelSerializer):
     class Meta:
         model = Playlist
         fields = ["id", "name", "description", "is_default", "is_fallback", "enabled", "entries"]
+
+
+class OffAirTrackSerializer(serializers.ModelSerializer):
+    """A waiting song for the off-air state (loops while the broadcast is off)."""
+
+    audio_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OffAirTrack
+        fields = ["id", "title", "audio_file", "audio_url", "position", "created_at"]
+
+    def validate_audio_file(self, value):
+        validate_audio_upload(value)
+        return value
+
+    def get_audio_url(self, obj) -> str | None:
+        return obj.audio_file.url if obj.audio_file else None

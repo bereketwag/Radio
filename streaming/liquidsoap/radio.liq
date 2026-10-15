@@ -68,16 +68,15 @@ music = playlist(
 emergency = single(FALLBACK)
 
 # ---------------------------------------------------------------------------
-# Broadcast on/off + off-air audio (driven by the backend heartbeat)
+# Broadcast on/off (driven by the backend heartbeat)
 #
-# The station toggle lives in the admin dashboard. The heartbeat response
-# carries `broadcast_enabled` and the off-air track URL; while the broadcast
-# is off the engine loops that track (or the local silence file) all day and
-# never touches the music rotation. Turning the broadcast back on returns to
-# the library at the next track boundary.
+# The station toggle lives in the admin dashboard. While the broadcast is
+# off the engine loops the admin's waiting songs (Settings → Off-air songs,
+# reloaded from offair.m3u every 15s) and never touches the music rotation;
+# with no waiting songs it plays the local silence file. Turning the
+# broadcast back on cuts to the music rotation within seconds.
 # ---------------------------------------------------------------------------
 broadcast_on = ref(true)
-offair_uri   = ref("")
 
 def refresh_broadcast() =
   try
@@ -87,9 +86,8 @@ def refresh_broadcast() =
       headers = list.append([("Content-Type", "application/json")], auth_header()),
       timeout = 5.
     )
-    let json.parse ({broadcast_enabled, fallback_uri}: {broadcast_enabled: bool, fallback_uri: string}) = body
+    let json.parse ({broadcast_enabled}: {broadcast_enabled: bool}) = body
     broadcast_on := broadcast_enabled
-    offair_uri := fallback_uri
   catch err do
     # Keep the last known mode on failure — never flip the station on a blip.
     log.important("broadcast poll failed: #{err}")
@@ -98,22 +96,16 @@ end
 
 thread.run(every=15., refresh_broadcast)
 
-# Empty while on air (fallback moves on to the music rotation); a looping
-# request while off air, so the off-audio plays all day.
-def get_offair() =
-  if broadcast_on() then
-    []
-  else
-    uri = offair_uri()
-    if uri == "" then
-      [request.create(FALLBACK)]
-    else
-      [request.create(uri)]
-    end
-  end
-end
-
-offair = request.dynamic.list(get_offair)
+# Waiting songs for the off-air state: a real playlist the backend serves,
+# so uploads/removals apply within ~15s without restarting the engine.
+# Falls back to local silence when no waiting songs exist.
+offair_playlist = playlist(
+  mode="normal",
+  reload=15,
+  mime_type="audio/x-mpegurl",
+  "#{BACKEND_URL}/api/internal/offair.m3u?key=#{API_KEY}"
+)
+offair_loop = fallback(track_sensitive=false, [offair_playlist, single(FALLBACK)])
 
 # ---------------------------------------------------------------------------
 # Force play ("Play now"): the admin picks a track in the dashboard and it
@@ -163,11 +155,11 @@ end
 
 force = request.dynamic.list(prefetch=1, get_force)
 
-# Broadcast gate: while off, loop the waiting track (the switch cuts away
-# from it the instant the broadcast turns back on — no waiting for the loop
-# file to finish). While on, straight to the music rotation.
+# Broadcast gate: while off, loop the waiting songs (the switch cuts away
+# from them the instant the broadcast turns back on — no waiting for the
+# current song to finish). While on, straight to the music rotation.
 offair_or_music = switch(track_sensitive=false, [
-  ({not(broadcast_on())}, offair),
+  ({not(broadcast_on())}, offair_loop),
   ({true}, music)
 ])
 

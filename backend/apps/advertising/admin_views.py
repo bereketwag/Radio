@@ -17,9 +17,10 @@ from rest_framework.viewsets import ModelViewSet
 
 from apps.accounts.models import Role, User
 from apps.accounts.serializers import AdminCreateUserSerializer, RoleUpdateSerializer, UserSerializer
-from apps.broadcast.models import BroadcastHistory, Playlist, PlaylistEntry, Track
+from apps.broadcast.models import BroadcastHistory, OffAirTrack, Playlist, PlaylistEntry, Track
 from apps.broadcast.serializers import (
     BroadcastHistorySerializer,
+    OffAirTrackSerializer,
     PlaylistSerializer,
     TrackSerializer,
 )
@@ -397,6 +398,28 @@ class TrackViewSet(ModelViewSet):
     def stats(self, request):
         """Library totals: song count and summed runtime (measured from files)."""
         return Response(_music_totals())
+
+
+class OffAirTrackViewSet(ModelViewSet):
+    """Waiting songs for the off-air state — a mini library that only airs
+    while the broadcast is off (Settings → Off-air songs)."""
+
+    serializer_class = OffAirTrackSerializer
+    permission_classes = [IsStationAdmin]
+    pagination_class = None
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_queryset(self):
+        return OffAirTrack.objects.all()
+
+    def perform_create(self, serializer):
+        last = OffAirTrack.objects.order_by("-position").values_list("position", flat=True).first() or 0
+        obj = serializer.save(position=last + 1)
+        _audit(self.request, "offair.create", obj, f"Off-air upload {obj}")
+
+    def perform_destroy(self, instance):
+        _audit(self.request, "offair.delete", instance, f"Removed off-air track {instance}")
+        instance.delete()
 
 
 class PlaylistViewSet(ModelViewSet):

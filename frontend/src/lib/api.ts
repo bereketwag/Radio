@@ -112,8 +112,15 @@ export interface StationSettings {
   contact_address: string
   accent_color: string
   broadcast_enabled: boolean
-  fallback_audio_url: string | null
   updated_at: string
+}
+
+export interface OffAirTrack {
+  id: string
+  title: string
+  audio_url: string | null
+  position: number
+  created_at: string
 }
 
 export interface NowPlaying {

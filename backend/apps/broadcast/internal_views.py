@@ -58,13 +58,11 @@ def heartbeat(request):
         return _reject()
     services.heartbeat(request.data.get("kind", "music"))
     from apps.common.models import StationSettings
-    from apps.common.utils import public_media_url
 
     cfg = StationSettings.get()
     return Response({
         "ok": True,
         "broadcast_enabled": cfg.broadcast_enabled,
-        "fallback_uri": public_media_url(cfg.fallback_audio.url) if cfg.fallback_audio else "",
     })
 
 
@@ -106,6 +104,19 @@ def playlist_m3u(request):
     if not _key_ok(request):
         return _reject()
     body = "".join(f"{line}\n" for line in services.export_playlist_m3u())
+    resp = HttpResponse(body, content_type="audio/x-mpegurl")
+    resp["Cache-Control"] = "no-cache"
+    return resp
+
+
+@api_view(["GET", "HEAD"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def offair_m3u(request):
+    """M3U of the admin's waiting songs — loops while the broadcast is off."""
+    if not _key_ok(request):
+        return _reject()
+    body = "".join(f"{line}\n" for line in services.export_offair_m3u())
     resp = HttpResponse(body, content_type="audio/x-mpegurl")
     resp["Cache-Control"] = "no-cache"
     return resp

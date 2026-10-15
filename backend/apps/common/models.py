@@ -37,11 +37,7 @@ class StationSettings(TimeStampedModel):
     )
     broadcast_enabled = models.BooleanField(
         default=True,
-        help_text="Off = the engine leaves the music rotation and loops the off-air audio instead.",
-    )
-    fallback_audio = models.FileField(
-        upload_to="fallback/", blank=True, null=True,
-        help_text="Off-air track played on repeat while the broadcast is off (empty = silence).",
+        help_text="Off = the engine leaves the music rotation and loops the off-air (waiting) songs instead.",
     )
 
     class Meta:

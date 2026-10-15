@@ -74,12 +74,18 @@ export function NowPlayingSection() {
                   {timeAgo(item.started_at) && ` · ${timeAgo(item.started_at)}`}
                 </p>
               </div>
-              {item.is_current && (
-                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
-                  <span className="h-1.5 w-1.5 rounded-full bg-accent animate-live-pulse" aria-hidden />
-                  LIVE
-                </span>
-              )}
+              {item.is_current &&
+                (item.kind === 'advert' ? (
+                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-danger/10 px-2 py-0.5 text-[11px] font-semibold text-danger">
+                    <span className="h-1.5 w-1.5 rounded-full bg-danger animate-live-pulse" aria-hidden />
+                    ADVERT
+                  </span>
+                ) : (
+                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
+                    <span className="h-1.5 w-1.5 rounded-full bg-accent animate-live-pulse" aria-hidden />
+                    LIVE
+                  </span>
+                ))}
             </li>
           ))}
         </ul>

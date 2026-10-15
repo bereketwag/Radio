@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from apps.common.models import HealthEvent, StationSettings, record_health_event
 
-from .models import BroadcastHistory, BroadcastState, Playlist, Track
+from .models import BroadcastHistory, BroadcastState, OffAirTrack, Playlist, Track
 
 logger = logging.getLogger("apps")
 
@@ -202,6 +202,24 @@ def export_playlist_m3u(playlist: Playlist | None = None) -> list[str]:
         # air even before anyone builds a playlist around it.
         return _lines_for_tracks(Track.objects.filter(enabled=True).exclude(audio_file=""))
     return _lines_for(playlist)
+
+
+def export_offair_m3u() -> list[str]:
+    """M3U of the waiting songs the admin uploaded for the off-air state.
+
+    Empty when none exist — the engine then plays its local silence file,
+    so the stream never dies even with nothing queued.
+    """
+    from apps.common.utils import public_media_url
+
+    lines: list[str] = []
+    for item in OffAirTrack.objects.all():
+        if not item.audio_file:
+            continue
+        title = " ".join((item.title or item.audio_file.name.rsplit("/", 1)[-1]).split())
+        lines.append(f"#EXTINF:0,{title}")
+        lines.append(public_media_url(item.audio_file.url))
+    return lines
 
 
 def request_force_play(track: Track) -> BroadcastState:

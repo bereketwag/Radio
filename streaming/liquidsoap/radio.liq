@@ -160,9 +160,17 @@ force = request.dynamic.list(prefetch=1, get_force)
 # Broadcast gate: while off, loop the waiting songs (the switch cuts away
 # from them the instant the broadcast turns back on — no waiting for the
 # current song to finish). While on, straight to the music rotation.
+#
+# music_alive wraps the rotation playlist in a silent placeholder: the
+# fallback keeps both children activated, so the playlist's reload thread
+# keeps running even while the backend is unreachable. Without it the
+# playlist goes unready, the switch abandons it, reloads stop forever, and
+# the station deadlocks on the emergency file until the container restarts.
+music_alive = fallback(track_sensitive=false, [music, blank()])
+
 offair_or_music = switch(track_sensitive=false, [
   ({not(broadcast_on())}, offair_loop),
-  ({true}, music)
+  ({true}, music_alive)
 ])
 
 radio = fallback(track_sensitive=false, [force, offair_or_music, emergency])

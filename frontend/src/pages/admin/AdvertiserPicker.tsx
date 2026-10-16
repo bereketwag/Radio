@@ -1,5 +1,5 @@
 import { Plus, X } from 'lucide-react'
-import { FormEvent, useEffect, useState } from 'react'
+import { KeyboardEvent, useEffect, useState } from 'react'
 import { api } from '../../lib/api'
 
 interface Advertiser {
@@ -45,8 +45,13 @@ export function AdvertiserPicker({
     }
   }, [])
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
+  /**
+   * Deliberately NOT a <form>: this picker renders inside the campaign
+   * <form>, and a nested form is invalid HTML — the browser then performs a
+   * real page navigation on submit (full reload, data lost). Plain button +
+   * Enter-key handling keeps the UX without ever nesting forms.
+   */
+  const submit = async () => {
     setError(null)
     setBusy(true)
     try {
@@ -63,12 +68,19 @@ export function AdvertiserPicker({
     }
   }
 
+  const onInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (!busy && name.trim() && email.trim()) void submit()
+    }
+  }
+
   if (advertisers === null) return <div className="input animate-pulse !bg-surface-2" aria-hidden />
 
   return (
     <div>
       {creating ? (
-        <form onSubmit={submit} className="grid gap-2 rounded-xl bg-surface-2 p-3">
+        <div className="grid gap-2 rounded-xl bg-surface-2 p-3">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium">New advertiser</p>
             <button type="button" className="btn-ghost h-7 w-7 !rounded-full !px-0" onClick={() => setCreating(false)} aria-label="Cancel new advertiser">
@@ -81,6 +93,7 @@ export function AdvertiserPicker({
             placeholder="Business name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onKeyDown={onInputKeyDown}
             disabled={busy}
           />
           <input
@@ -90,13 +103,19 @@ export function AdvertiserPicker({
             placeholder="Billing contact email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={onInputKeyDown}
             disabled={busy}
           />
           {error && <p className="text-xs text-danger">{error}</p>}
-          <button className="btn-primary" type="submit" disabled={busy || !name.trim() || !email.trim()}>
+          <button
+            className="btn-primary"
+            type="button"
+            onClick={() => void submit()}
+            disabled={busy || !name.trim() || !email.trim()}
+          >
             {busy ? 'Saving…' : 'Create & select'}
           </button>
-        </form>
+        </div>
       ) : (
         <>
           <select

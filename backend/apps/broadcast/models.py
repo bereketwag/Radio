@@ -139,6 +139,13 @@ class BroadcastState(models.Model):
     )
     force_requested_at = models.DateTimeField(null=True, blank=True)
     force_started_at = models.DateTimeField(null=True, blank=True)
+    # Admin "Play playlist now" (e.g. a Christmas playlist): while set, the
+    # rotation m3u serves this playlist instead of the default one. Cleared
+    # by "Stop" on the playlist — the normal rotation then resumes.
+    override_playlist = models.ForeignKey(
+        Playlist, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    override_started_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

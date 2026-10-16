@@ -510,6 +510,40 @@ class PlaylistViewSet(ModelViewSet):
         _audit(request, "playlist.reorder", playlist, f"Reordered {playlist.name}")
         return Response(PlaylistSerializer(playlist).data)
 
+    @action(detail=True, methods=["post"])
+    def play_now(self, request, pk=None):
+        """Put this playlist on air now (e.g. a Christmas playlist).
+
+        Overrides the normal rotation until stop is pressed; the engine
+        picks the change up on its next m3u reload (~15s).
+        """
+        from apps.broadcast.services import request_playlist_override
+
+        playlist = self.get_object()
+        try:
+            request_playlist_override(playlist)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        _audit(request, "playlist.play_now", playlist, f"Playlist on air: {playlist.name}")
+        return Response(
+            {
+                "detail": f"“{playlist.name}” is on air now. The stream switches within ~15s; press Stop to resume the normal rotation.",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def stop(self, request, pk=None):
+        """Take this playlist off air and resume the normal rotation."""
+        from apps.broadcast.services import get_state, stop_playlist_override
+
+        playlist = self.get_object()
+        if get_state().override_playlist_id != playlist.id:
+            return Response({"detail": "This playlist is not on air."}, status=status.HTTP_400_BAD_REQUEST)
+        stop_playlist_override()
+        _audit(request, "playlist.stop", playlist, f"Playlist off air: {playlist.name}")
+        return Response({"detail": "Normal rotation resumes within ~15s."})
+
 
 # ---------------------------------------------------------------------------
 # Users, logs, overview
@@ -560,6 +594,31 @@ class AdminUserViewSet(ModelViewSet):
         log_audit(request.user, "user.change_role", "user", str(user.id), f"{user.email}: {old} -> {user.role}")
         return Response(UserSerializer(user).data)
 
+    @action(detail=True, methods=["post"], url_path="reset-password")
+    def reset_password(self, request, pk=None):
+        """Super admin: reset a forgotten password to a random temporary one.
+
+        No email involved — the admin reads the temporary password off the
+        screen and gives it to the user once (it is never shown again).
+        Existing sessions for that user are invalidated.
+        """
+        import secrets
+
+        from rest_framework.authtoken.models import Token
+
+        user = self.get_object()
+        temp = secrets.token_urlsafe(12)
+        user.set_password(temp)
+        user.save(update_fields=["password"])
+        Token.objects.filter(user=user).delete()
+        log_audit(request.user, "user.reset_password", "user", str(user.id), f"Reset password for {user.email}")
+        return Response(
+            {
+                "detail": "Password reset. Share this temporary password with the user — it is shown only once. They should change it after signing in.",
+                "temporary_password": temp,
+            }
+        )
+
 
 @api_view(["GET"])
 @permission_classes([IsAdvertisingTeam])
@@ -585,17 +644,23 @@ def health_events(request):
 @permission_classes([IsAdvertisingTeam])
 def overview(request):
     """Dashboard overview — every number is database- or engine-derived."""
-    from apps.broadcast.services import build_status_payload
+    from apps.broadcast.services import build_status_payload, playlist_override_status
+
+    from .models import ClickEvent, ImpressionEvent
 
     now = timezone.now()
     status_payload = build_status_payload()
 
     totals = VisualCampaign.objects.aggregate(impressions=Sum("impressions"), clicks=Sum("clicks"))
+    week_ago = now - timezone.timedelta(days=7)
+    impressions_7d = ImpressionEvent.objects.filter(created_at__gte=week_ago).count()
+    clicks_7d = ClickEvent.objects.filter(created_at__gte=week_ago).count()
     upcoming = AdBreakLog.objects.filter(scheduled_for__gte=now, result=AdBreakLog.Result.MISSED)[:10]
 
     return Response(
         {
             "broadcast": status_payload,
+            "playlist_override": playlist_override_status(),
             "active_visual_campaigns": services.eligible_visual_campaigns().__len__(),
             "active_audio_campaigns": AudioCampaign.objects.filter(
                 status__in=[CampaignStatus.APPROVED, CampaignStatus.ACTIVE]
@@ -603,6 +668,7 @@ def overview(request):
             "pending_ad_requests": AdRequest.objects.filter(status=AdRequest.Status.PENDING).count(),
             "total_impressions": totals["impressions"] or 0,
             "total_clicks": totals["clicks"] or 0,
+            "ad_performance_7d": {"impressions": impressions_7d, "clicks": clicks_7d},
             "upcoming_breaks": AdBreakLogSerializer(upcoming, many=True).data,
             "recent_errors": [
                 {"code": e.code, "message": e.message, "severity": e.severity, "created_at": e.created_at.isoformat()}

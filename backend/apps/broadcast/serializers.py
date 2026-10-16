@@ -138,10 +138,16 @@ class PlaylistEntrySerializer(serializers.ModelSerializer):
 
 class PlaylistSerializer(serializers.ModelSerializer):
     entries = PlaylistEntrySerializer(many=True, read_only=True)
+    is_on_air = serializers.SerializerMethodField()
 
     class Meta:
         model = Playlist
-        fields = ["id", "name", "description", "is_default", "is_fallback", "enabled", "entries"]
+        fields = ["id", "name", "description", "is_default", "is_fallback", "enabled", "entries", "is_on_air"]
+
+    def get_is_on_air(self, obj) -> bool:
+        from apps.broadcast.services import get_state
+
+        return get_state().override_playlist_id == obj.id
 
 
 class OffAirTrackSerializer(serializers.ModelSerializer):

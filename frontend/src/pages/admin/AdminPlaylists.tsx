@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, ListMusic, Plus, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, ListMusic, Pause, Play, Plus, Trash2, X } from 'lucide-react'
 import { FormEvent, useState } from 'react'
 import { api } from '../../lib/api'
 import { AdminSection, EmptyState, ErrorState, Spinner, useAdminFetch } from './useAdminApi'
@@ -16,6 +16,7 @@ interface Playlist {
   is_default: boolean
   is_fallback: boolean
   enabled: boolean
+  is_on_air: boolean
   entries: Entry[]
 }
 
@@ -128,10 +129,38 @@ export function AdminPlaylists() {
     }
   }
 
+  const playNow = async (p: Playlist) => {
+    setBusy(true)
+    setActionError(null)
+    try {
+      await api.post(`/admin-panel/playlists/${p.id}/play_now/`)
+      reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not put the playlist on air')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const stopPlaylist = async (p: Playlist) => {
+    setBusy(true)
+    setActionError(null)
+    try {
+      await api.post(`/admin-panel/playlists/${p.id}/stop/`)
+      reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not take the playlist off air')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onAirPlaylist = playlists.find((p) => p.is_on_air) ?? null
+
   return (
     <AdminSection
       title="Playlists"
-      description="The default playlist feeds the broadcast engine. Fallback plays if the main rotation can’t provide a track."
+      description="The default playlist feeds the broadcast engine. Use Play now to take over the stream with a playlist (e.g. Christmas) and Stop to resume the normal rotation."
       actions={
         <button className="btn-primary" onClick={() => setCreateOpen((o) => !o)} disabled={busy}>
           <Plus size={15} /> New playlist
@@ -140,6 +169,17 @@ export function AdminPlaylists() {
     >
       {loading && <Spinner />}
       {error && <ErrorState message={error} onRetry={reload} />}
+
+      {onAirPlaylist && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-danger/10 px-4 py-3">
+          <p className="text-sm font-semibold text-danger">
+            “{onAirPlaylist.name}” is on air — the normal rotation is paused.
+          </p>
+          <button className="btn-ghost text-xs" onClick={() => stopPlaylist(onAirPlaylist)} disabled={busy}>
+            <Pause size={13} /> Stop override
+          </button>
+        </div>
+      )}
 
       {actionError && (
         <p className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">
@@ -215,6 +255,11 @@ export function AdminPlaylists() {
                     {p.is_default && ' · default'}
                     {p.is_fallback && ' · fallback'}
                   </span>
+                  {p.is_on_air && (
+                    <span className="mt-1 inline-block rounded-full bg-danger/10 px-2 py-0.5 text-[11px] font-semibold text-danger">
+                      ON AIR
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
@@ -231,6 +276,25 @@ export function AdminPlaylists() {
                     {selected.description && <p className="text-sm text-muted">{selected.description}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {selected.is_on_air ? (
+                      <button
+                        className="btn-ghost text-danger"
+                        onClick={() => stopPlaylist(selected)}
+                        disabled={busy}
+                        title="Take this playlist off air and resume the normal rotation"
+                      >
+                        <Pause size={15} /> Stop
+                      </button>
+                    ) : (
+                      <button
+                        className="btn-ghost"
+                        onClick={() => playNow(selected)}
+                        disabled={busy || selected.entries.length === 0 || !selected.enabled}
+                        title="Put this playlist on air now — overrides the normal rotation until stopped"
+                      >
+                        <Play size={15} /> Play now
+                      </button>
+                    )}
                     <button
                       className="btn-ghost"
                       onClick={() => setRole(selected, { is_default: !selected.is_default })}

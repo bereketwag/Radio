@@ -1,4 +1,5 @@
 import {
+  Briefcase,
   Disc3,
   FileAudio,
   FileText,
@@ -17,6 +18,7 @@ import { AdminMusic } from './AdminMusic'
 import { AdminPlaylists } from './AdminPlaylists'
 import { AdminVisualAds } from './AdminVisualAds'
 import { AdminAudioAds } from './AdminAudioAds'
+import { AdminAdvertisers } from './AdminAdvertisers'
 import { AdminRequests } from './AdminRequests'
 import { AdminUsers } from './AdminUsers'
 import { AdminLogs } from './AdminLogs'
@@ -27,6 +29,7 @@ const nav = [
   { to: '/admin/requests', label: 'Ad requests', icon: FileText },
   { to: '/admin/visual', label: 'Banner campaigns', icon: ImageIcon },
   { to: '/admin/audio', label: 'Audio campaigns', icon: FileAudio },
+  { to: '/admin/advertisers', label: 'Advertisers', icon: Briefcase },
   { to: '/admin/music', label: 'Music library', icon: Disc3 },
   { to: '/admin/playlists', label: 'Playlists', icon: ListMusic },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
@@ -77,6 +80,7 @@ export function AdminApp() {
             <Route path="requests" element={<AdminRequests />} />
             <Route path="visual" element={<AdminVisualAds />} />
             <Route path="audio" element={<AdminAudioAds />} />
+            <Route path="advertisers" element={<AdminAdvertisers />} />
             <Route path="music" element={<AdminMusic />} />
             <Route path="playlists" element={<AdminPlaylists />} />
             <Route path="settings" element={<AdminSettings />} />

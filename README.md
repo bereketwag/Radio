@@ -172,15 +172,19 @@ Secrets never ship in frontend code; the SPA only reads public config from
 
 `/admin` (station roles only; anonymous visitors are redirected to sign-in).
 
-- **Overview** — broadcast status, live listener count (measured), active campaigns, pending requests, impressions/clicks, upcoming breaks, recent errors
+- **Overview** — broadcast status, live listener count (measured), active campaigns, pending requests, impressions/clicks (with a 7-day window), upcoming breaks, recent errors, playlist-override banner (with Stop)
 - **Ad requests** — review, approve/reject submissions
 - **Banner campaigns** — upload banners, set placement/priority/window, pause/activate, payment status, impressions/clicks/CTR
 - **Audio campaigns** — upload adverts, schedules with recurrence + conflict warnings, kill-switch, broadcast logs (played vs missed)
+- **Advertisers** — full CRUD on the businesses buying ads (contact details, campaign counts); also auto-created when approving a request
 - **Music library** — upload audio (validated types/sizes), tag metadata, ISRC/label/territories, enable/disable, per-track airing history, **Play now** (force a track onto the stream immediately)
-- **Playlists** — create, add/remove/reorder tracks, default + fallback designation
+- **Playlists** — create, add/remove/reorder tracks, default + fallback designation, **Play now / Stop** (put a whole playlist — e.g. a Christmas selection — on air, overriding the normal rotation until stopped; the engine switches within ~15s)
 - **Settings** — station branding, theme colour, broadcast on/off switch, waiting songs (multiple off-air uploads that loop while the broadcast is off)
-- **Users** — role management (super admin only)
+- **Users** — role management + **Reset password** (super admin only: sets a forgotten password to a one-time temporary password, no email needed)
 - **System log** — audit trail + broadcast health events
+
+Signed-in users (including listeners) can change their own password from the
+Account page (`POST /api/auth/change-password/`).
 
 Roles: `super_admin`, `station_admin`, `ad_manager`, `advertiser`, `listener`.
 Registration always creates a listener; privileged roles are assigned by a
@@ -199,6 +203,7 @@ super admin only.
 | POST | `/api/ads/banners/{id}/impression/` `/click/` | public | Measured events (throttled) |
 | POST | `/api/ads/requests/` | public | Advertiser request form (throttled) |
 | POST | `/api/auth/register/` `/login/` `/logout/` | public | Token auth |
+| POST | `/api/auth/change-password/` | token | Signed-in user changes their own password |
 | POST | `/api/internal/ingest/` | `X-Broadcast-Key` | Engine: now playing |
 | POST | `/api/internal/heartbeat/` | `X-Broadcast-Key` | Engine: liveness + broadcast switch + off-air track URL |
 | GET | `/api/internal/force-play/` | `X-Broadcast-Key` | Engine: pending "Play now" track (claimed once) |
@@ -253,7 +258,7 @@ Interactive docs: `/api/` (DRF browsable root) — schema is reachable per-route
 ## Testing
 
 ```bash
-# Backend — 136 tests covering:
+# Backend — 150 tests covering:
 #   campaign eligibility & expired-ad exclusion
 #   schedule conflict detection & break windows
 #   missed-break detection
@@ -264,6 +269,8 @@ Interactive docs: `/api/` (DRF browsable root) — schema is reachable per-route
 #   library-first rotation (m3u falls back to enabled tracks when playlists are empty)
 #   waiting songs: upload → off-air m3u → engine loop, removals, validation
 #   play-now: queue → engine claim (once) → broadcast-off deferral
+#   playlist override: play-now/stop → m3u switch → validation & audit
+#   password flows: super-admin reset, self change-password, session invalidation
 #   broadcast metadata ingest & status truthfulness
 #   internal endpoint authentication
 #   upload → playlist.m3u → engine ingest → public now-playing chain

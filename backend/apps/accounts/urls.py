@@ -11,6 +11,7 @@ urlpatterns = [
     path("login/", views.login),
     path("logout/", views.logout),
     path("me/", views.me),
+    path("change-password/", views.change_password),
     path("password-reset/", views.password_reset_request),
     path("password-reset/confirm/", views.password_reset_confirm),
     path("", include(router.urls)),

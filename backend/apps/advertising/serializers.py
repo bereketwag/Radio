@@ -18,13 +18,22 @@ from .models import (
 
 
 class AdvertiserSerializer(serializers.ModelSerializer):
+    visual_campaigns_count = serializers.SerializerMethodField()
+    audio_campaigns_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Advertiser
         fields = [
             "id", "owner", "name", "contact_name", "email", "phone", "website", "notes",
-            "created_at", "updated_at",
+            "created_at", "updated_at", "visual_campaigns_count", "audio_campaigns_count",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_visual_campaigns_count(self, obj) -> int:
+        return obj.visual_campaigns.count()
+
+    def get_audio_campaigns_count(self, obj) -> int:
+        return obj.audio_campaigns.count()
 
 
 class AdRequestSerializer(serializers.ModelSerializer):

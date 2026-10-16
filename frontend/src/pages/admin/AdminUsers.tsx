@@ -1,3 +1,4 @@
+import { Copy, KeyRound } from 'lucide-react'
 import { FormEvent, useState } from 'react'
 import { api } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
@@ -11,6 +12,11 @@ interface AdminUser {
   role: string
   organization: string
   date_joined: string
+}
+
+interface ResetResult {
+  email: string
+  password: string
 }
 
 const ADMIN_ROLES = new Set(['super_admin', 'station_admin', 'ad_manager'])
@@ -38,6 +44,8 @@ export function AdminUsers() {
   const [formError, setFormError] = useState<string | null>(null)
   const [formOk, setFormOk] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [resetResult, setResetResult] = useState<ResetResult | null>(null)
+  const [copied, setCopied] = useState(false)
   const [form, setForm] = useState({
     email: '',
     display_name: '',
@@ -57,6 +65,35 @@ export function AdminUsers() {
       setFormError(err instanceof Error ? err.message : 'Could not update role')
     } finally {
       setBusy(null)
+    }
+  }
+
+  const resetPassword = async (u: AdminUser) => {
+    if (!window.confirm(`Reset the password for ${u.email}? Their old password and existing sessions stop working.`)) return
+    setBusy(u.id)
+    setFormError(null)
+    setFormOk(null)
+    setResetResult(null)
+    try {
+      const res = await api.post<{ detail: string; temporary_password: string }>(
+        `/admin-panel/users/${u.id}/reset-password/`,
+      )
+      setResetResult({ email: u.email, password: res.temporary_password })
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not reset password')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const copyPassword = async () => {
+    if (!resetResult) return
+    try {
+      await navigator.clipboard.writeText(resetResult.password)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard unavailable — the password is still selectable on screen.
     }
   }
 
@@ -147,6 +184,29 @@ export function AdminUsers() {
       {formError && <p className="mb-4 text-sm text-danger">{formError}</p>}
       {formOk && <p className="mb-4 text-sm text-accent">{formOk}</p>}
 
+      {resetResult && (
+        <div className="mb-6 rounded-xl border border-warning/30 bg-warning/5 p-4">
+          <div className="flex items-center gap-2">
+            <KeyRound size={15} className="text-warning" />
+            <p className="text-sm font-semibold">Temporary password for {resetResult.email}</p>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <code className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold tracking-wide select-all">
+              {resetResult.password}
+            </code>
+            <button className="btn-ghost !py-1.5 text-xs" onClick={() => void copyPassword()}>
+              <Copy size={13} /> {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            Shown only once. Give it to the user — they can change it from Account after signing in.
+          </p>
+          <button className="btn-ghost mt-2 !py-1 text-xs" onClick={() => setResetResult(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {loading && <Spinner />}
       {error && <ErrorState message={error} onRetry={reload} />}
 
@@ -194,25 +254,37 @@ export function AdminUsers() {
                     </td>
                     {canManage && (
                       <td className="px-4 py-3">
-                        {isMe ? (
-                          <span className="text-xs text-muted">—</span>
-                        ) : isAdmin ? (
-                          <button
-                            className="btn-ghost !py-1.5 text-xs"
-                            disabled={busy === u.id}
-                            onClick={() => changeRole(u, 'listener')}
-                          >
-                            Make normal user
-                          </button>
-                        ) : (
-                          <button
-                            className="btn-primary !py-1.5 text-xs"
-                            disabled={busy === u.id}
-                            onClick={() => changeRole(u, 'station_admin')}
-                          >
-                            Promote to admin
-                          </button>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {!isMe && (
+                            <button
+                              className="btn-ghost !py-1.5 text-xs"
+                              disabled={busy === u.id}
+                              onClick={() => void resetPassword(u)}
+                              title="Set a forgotten password to a temporary one"
+                            >
+                              Reset password
+                            </button>
+                          )}
+                          {isMe ? (
+                            <span className="text-xs text-muted">—</span>
+                          ) : isAdmin ? (
+                            <button
+                              className="btn-ghost !py-1.5 text-xs"
+                              disabled={busy === u.id}
+                              onClick={() => changeRole(u, 'listener')}
+                            >
+                              Make normal user
+                            </button>
+                          ) : (
+                            <button
+                              className="btn-primary !py-1.5 text-xs"
+                              disabled={busy === u.id}
+                              onClick={() => changeRole(u, 'station_admin')}
+                            >
+                              Promote to admin
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>

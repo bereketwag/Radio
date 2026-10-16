@@ -68,6 +68,27 @@ def me(request):
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """Signed-in user changes their own password (current + new)."""
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError as DjangoValidationError
+
+    current = request.data.get("current_password", "")
+    new = request.data.get("new_password", "")
+    if not request.user.check_password(current):
+        return Response({"current_password": ["Current password is incorrect."]}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        validate_password(new, user=request.user)
+    except DjangoValidationError as exc:
+        return Response({"new_password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+    request.user.set_password(new)
+    request.user.save(update_fields=["password"])
+    log_audit(request.user, "account.change_password", "user", str(request.user.id), f"Password changed for {request.user.email}")
+    return Response({"detail": "Password updated."})
+
+
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def password_reset_request(request):
     ser = PasswordResetRequestSerializer(data=request.data)

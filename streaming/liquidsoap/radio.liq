@@ -57,9 +57,11 @@ end
 # ---------------------------------------------------------------------------
 # Key in the query string: playlist() cannot send custom headers.
 # mime_type skips the extension probe, which chokes on the query string.
+# reload=15 so a playlist override (admin "Play now" / "Stop") takes effect
+# within seconds instead of a minute.
 music = playlist(
   mode="normal",
-  reload=60,
+  reload=15,
   mime_type="audio/x-mpegurl",
   "#{BACKEND_URL}/api/internal/playlist.m3u?key=#{API_KEY}"
 )

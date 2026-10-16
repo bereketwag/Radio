@@ -190,6 +190,14 @@ def export_playlist_m3u(playlist: Playlist | None = None) -> list[str]:
         return _lines_for_tracks(entry.track for entry in entries)
 
     if playlist is None:
+        # Seasonal/one-off override (admin "Play playlist now"): while set,
+        # the engine's rotation comes from that playlist only.
+        state = get_state()
+        override = state.override_playlist
+        if override is not None and override.enabled:
+            lines = _lines_for(override)
+            if lines:
+                return lines
         # Prefer the default rotation, but never serve an empty list when a
         # populated fallback (or any other enabled playlist) exists — an
         # empty m3u means the engine has nothing to play.
@@ -269,4 +277,44 @@ def build_force_play_payload() -> dict:
         "artist": track.artist,
         "duration_seconds": int(track.duration_seconds or 0),
         "requested_at": state.force_requested_at.isoformat() if state.force_requested_at else "",
+    }
+
+
+def request_playlist_override(playlist: Playlist) -> BroadcastState:
+    """Admin "Play playlist now" (e.g. a Christmas playlist).
+
+    While set, export_playlist_m3u() serves this playlist instead of the
+    normal rotation. The engine picks the new list up on its next m3u
+    reload (~15s); stop_playlist_override() reverts to the normal rotation
+    the same way.
+    """
+    if not playlist.enabled:
+        raise ValueError("Enable the playlist before putting it on air.")
+    if not playlist.entries.filter(track__enabled=True).exclude(track__audio_file="").exists():
+        raise ValueError("Add at least one track with audio before putting this playlist on air.")
+    state = get_state()
+    state.override_playlist = playlist
+    state.override_started_at = timezone.now()
+    state.save(update_fields=["override_playlist", "override_started_at"])
+    return state
+
+
+def stop_playlist_override() -> BroadcastState:
+    """Clear the on-air playlist override — normal rotation resumes."""
+    state = get_state()
+    state.override_playlist = None
+    state.override_started_at = None
+    state.save(update_fields=["override_playlist", "override_started_at"])
+    return state
+
+
+def playlist_override_status() -> dict:
+    """Snapshot for the admin overview / status payloads."""
+    state = get_state()
+    playlist = state.override_playlist
+    return {
+        "active": playlist is not None,
+        "playlist_id": str(playlist.id) if playlist else None,
+        "playlist_name": playlist.name if playlist else None,
+        "started_at": state.override_started_at.isoformat() if state.override_started_at else None,
     }

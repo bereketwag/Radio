@@ -1,4 +1,4 @@
-import { LogOut, Package } from 'lucide-react'
+import { LogOut, Package, ShieldCheck } from 'lucide-react'
 import { FormEvent, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
@@ -33,6 +33,37 @@ export function AccountPage() {
   const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [requests, setRequests] = useState<AdRequestRow[]>([])
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('')
+  const [pwError, setPwError] = useState<string | null>(null)
+  const [pwOk, setPwOk] = useState<string | null>(null)
+  const [pwBusy, setPwBusy] = useState(false)
+
+  const changePassword = async (e: FormEvent) => {
+    e.preventDefault()
+    setPwError(null)
+    setPwOk(null)
+    if (newPassword !== newPasswordConfirm) {
+      setPwError('New passwords do not match.')
+      return
+    }
+    setPwBusy(true)
+    try {
+      await api.post('/auth/change-password/', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      })
+      setPwOk('Password updated. Use the new password the next time you sign in.')
+      setCurrentPassword('')
+      setNewPassword('')
+      setNewPasswordConfirm('')
+    } catch (err) {
+      setPwError(err instanceof ApiError ? err.message : 'Could not change password.')
+    } finally {
+      setPwBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!user) return
@@ -98,6 +129,61 @@ export function AccountPage() {
               </div>
             </div>
           </div>
+
+          <form onSubmit={changePassword} className="card mt-4 p-6">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={16} className="text-accent" />
+              <h2 className="text-sm font-semibold">Change password</h2>
+            </div>
+            {pwError && (
+              <p className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">{pwError}</p>
+            )}
+            {pwOk && (
+              <p className="mt-3 rounded-lg bg-accent/10 px-3 py-2 text-sm text-accent" role="status">{pwOk}</p>
+            )}
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className="label" htmlFor="current-password">Current password</label>
+                <input
+                  id="current-password"
+                  className="input"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="new-password">New password</label>
+                <input
+                  id="new-password"
+                  className="input"
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="new-password2">Confirm new password</label>
+                <input
+                  id="new-password2"
+                  className="input"
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  value={newPasswordConfirm}
+                  onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                />
+              </div>
+            </div>
+            <button type="submit" className="btn-ghost mt-3" disabled={pwBusy}>
+              {pwBusy ? 'Saving…' : 'Update password'}
+            </button>
+          </form>
 
           <div className="card mt-4 p-6">
             <div className="flex items-center gap-2">

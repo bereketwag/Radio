@@ -1,4 +1,6 @@
-import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, ListMusic, Pause } from 'lucide-react'
+import { useState } from 'react'
+import { api } from '../../lib/api'
 import { AdminSection, ErrorState, Spinner, StatusBadge, useAdminFetch } from './useAdminApi'
 
 interface Overview {
@@ -12,11 +14,18 @@ interface Overview {
     listeners_measured: boolean
     started_at: string | null
   }
+  playlist_override: {
+    active: boolean
+    playlist_id: string | null
+    playlist_name: string | null
+    started_at: string | null
+  }
   active_visual_campaigns: number
   active_audio_campaigns: number
   pending_ad_requests: number
   total_impressions: number
   total_clicks: number
+  ad_performance_7d: { impressions: number; clicks: number }
   upcoming_breaks: {
     id: string
     campaign_name: string
@@ -51,6 +60,7 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
 
 export function AdminOverview() {
   const { data, error, loading, reload } = useAdminFetch<Overview>('/admin-panel/overview/')
+  const [stopping, setStopping] = useState(false)
 
   if (loading) return <Spinner />
   if (error || !data) return <ErrorState message={error ?? 'No data'} onRetry={reload} />
@@ -59,6 +69,17 @@ export function AdminOverview() {
     data.total_impressions > 0
       ? `${((data.total_clicks / data.total_impressions) * 100).toFixed(2)}%`
       : '—'
+
+  const stopOverride = async () => {
+    if (!data.playlist_override.playlist_id) return
+    setStopping(true)
+    try {
+      await api.post(`/admin-panel/playlists/${data.playlist_override.playlist_id}/stop/`)
+      reload()
+    } finally {
+      setStopping(false)
+    }
+  }
 
   return (
     <AdminSection
@@ -112,6 +133,18 @@ export function AdminOverview() {
         </div>
       </div>
 
+      {data.playlist_override.active && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-danger/10 px-4 py-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-danger">
+            <ListMusic size={15} />
+            Playlist override: “{data.playlist_override.playlist_name}” is on air — the normal rotation is paused.
+          </p>
+          <button className="btn-ghost text-xs" onClick={() => void stopOverride()} disabled={stopping}>
+            <Pause size={13} /> Stop override
+          </button>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Songs in library" value={data.music.total_songs.toLocaleString()} hint={`${data.music.enabled_songs} in rotation`} />
         <Stat
@@ -129,7 +162,7 @@ export function AdminOverview() {
         <Stat
           label="Impressions / clicks"
           value={`${data.total_impressions.toLocaleString()} / ${data.total_clicks.toLocaleString()}`}
-          hint={`CTR ${ctr} (measured)`}
+          hint={`CTR ${ctr} · last 7d: ${data.ad_performance_7d.impressions.toLocaleString()} imp / ${data.ad_performance_7d.clicks.toLocaleString()} clicks`}
         />
       </div>
 

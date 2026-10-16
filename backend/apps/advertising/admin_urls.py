@@ -7,6 +7,10 @@ from . import admin_views
 
 router = DefaultRouter()
 router.register("ad-requests", admin_views.AdRequestViewSet, basename="ad-request")
+# Alias: browsers with ad/privacy extensions block URLs containing "advertis*"
+# (ERR_BLOCKED_BY_CLIENT → "Failed to fetch"). The frontend uses /partners/;
+# /advertisers/ is kept so tests and older clients still work.
+router.register("partners", admin_views.AdvertiserViewSet, basename="partner")
 router.register("advertisers", admin_views.AdvertiserViewSet, basename="advertiser")
 router.register("visual-campaigns", admin_views.VisualCampaignViewSet, basename="visual-campaign")
 router.register("audio-adverts", admin_views.AudioAdvertViewSet, basename="audio-advert")

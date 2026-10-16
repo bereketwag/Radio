@@ -33,7 +33,9 @@ export function AdvertiserPicker({
   useEffect(() => {
     let alive = true
     api
-      .get<Advertiser[]>('/admin-panel/advertisers/')
+      // "/partners/" not "/advertisers/": ad-blocker extensions block "advertis*"
+      // URLs in the browser before they ever leave (Failed to fetch).
+      .get<Advertiser[]>('/admin-panel/partners/')
       .then((res) => {
         if (!alive) return
         // Router-paginated endpoints wrap in {results}; this one is a bare list.
@@ -55,7 +57,7 @@ export function AdvertiserPicker({
     setError(null)
     setBusy(true)
     try {
-      const created = await api.post<Advertiser>('/admin-panel/advertisers/', { name: name.trim(), email: email.trim() })
+      const created = await api.post<Advertiser>('/admin-panel/partners/', { name: name.trim(), email: email.trim() })
       setAdvertisers((prev) => [...(prev ?? []), created].sort((a, b) => a.name.localeCompare(b.name)))
       onChange(created.id)
       setCreating(false)

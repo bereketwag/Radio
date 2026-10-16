@@ -60,12 +60,13 @@ export function AdminRequests() {
     try {
       // Reuse an advertiser with this name if one exists (a retry after an
       // interrupted first attempt must not create a duplicate).
-      const existing = await api.get<Advertiser[] | { results: Advertiser[] }>('/admin-panel/advertisers/')
+      // "/partners/": ad-blockers block "advertis*" URLs in the browser.
+      const existing = await api.get<Advertiser[] | { results: Advertiser[] }>('/admin-panel/partners/')
       const list = Array.isArray(existing) ? existing : (existing.results ?? [])
       const found = list.find((a) => a.name === r.business_name)
       const advertiser =
         found ??
-        (await api.post<{ id: string }>('/admin-panel/advertisers/', {
+        (await api.post<{ id: string }>('/admin-panel/partners/', {
           name: r.business_name,
           email: r.email,
           contact_name: r.contact_name,

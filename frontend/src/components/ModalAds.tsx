@@ -7,6 +7,7 @@ const COOLDOWN_MS = 45_000 // minimum gap between modal showings
 const MAX_PER_SESSION = 3 // never nag: at most 3 modals per browsing session
 const IMPRESSION_DELAY_MS = 1500
 const OPEN_DELAY_MS = 4000 // let the page settle before the interstitial
+const REFRESH_MS = 45_000 // re-check eligibility: campaigns start/stop on a schedule
 
 const SEEN_KEY = 'aurora.modals.seen'
 const COUNT_KEY = 'aurora.modals.shown'
@@ -62,14 +63,26 @@ export function ModalAds() {
 
   useEffect(() => {
     let alive = true
-    api
-      .get<{ results: Banner[] }>('/ads/banners/?placement=modal')
-      .then((res) => alive && setCampaigns(res.results))
-      .catch(() => {
-        /* no campaigns — nothing to show */
-      })
+    const load = () => {
+      api
+        .get<{ results: Banner[] }>('/ads/banners/?placement=modal')
+        .then((res) => alive && setCampaigns(res.results))
+        .catch(() => {
+          /* no campaigns — nothing to show */
+        })
+    }
+    load()
+    // Scheduled campaigns flip on/off without a page reload — re-check
+    // periodically and whenever the tab returns to the foreground.
+    const id = setInterval(load, REFRESH_MS)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load()
+    }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       alive = false
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [location.pathname])
 

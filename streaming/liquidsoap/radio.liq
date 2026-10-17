@@ -184,6 +184,10 @@ def post_now_playing(m) =
     title = meta_or(m, "title", ""),
     artist = meta_or(m, "artist", ""),
     album = meta_or(m, "album", ""),
+    # The URL we asked the engine to play. ID3 tags inside the file can
+    # blank or rewrite "title" during decode — the backend matches this
+    # URL back to the library entry so rotation never loses the anchor.
+    uri = meta_or(m, "initial_uri", ""),
     duration_seconds = int(max(0., radio.duration())),
     started_at = time()  # engine wall-clock instant (UTC epoch seconds)
   })

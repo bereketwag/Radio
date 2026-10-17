@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, Banner } from '../lib/api'
 
 const ROTATION_MS = 8000
+const REFRESH_MS = 45_000 // re-check eligibility: campaigns start/stop on a schedule
 
 /**
  * Sponsor panel: rotates eligible banners served by the backend.
@@ -22,17 +23,29 @@ export function SponsorPanel({ placement = 'sidebar' }: { placement?: string }) 
 
   useEffect(() => {
     let alive = true
-    api
-      .get<{ results: Banner[] }>(`/ads/banners/?placement=${placement}`)
-      .then((res) => {
-        if (alive) {
-          setBanners(res.results)
-          setLoaded(true)
-        }
-      })
-      .catch(() => alive && setLoaded(true))
+    const load = () => {
+      api
+        .get<{ results: Banner[] }>(`/ads/banners/?placement=${placement}`)
+        .then((res) => {
+          if (alive) {
+            setBanners(res.results)
+            setLoaded(true)
+          }
+        })
+        .catch(() => alive && setLoaded(true))
+    }
+    load()
+    // Scheduled campaigns flip on/off without a page reload — re-check
+    // periodically and whenever the tab returns to the foreground.
+    const id = setInterval(load, REFRESH_MS)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load()
+    }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       alive = false
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
       Object.values(impressionTimers.current).forEach(clearTimeout)
     }
   }, [placement])

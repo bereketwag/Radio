@@ -167,6 +167,15 @@ class AdScheduleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"weekday": "Weekly schedules need a weekday (0=Monday)."})
         if recurrence in (AdSchedule.Recurrence.DAILY, AdSchedule.Recurrence.WEEKLY) and local_time is None:
             raise serializers.ValidationError({"local_time": "Recurring schedules need a station-local time."})
+        if recurrence in (AdSchedule.Recurrence.DAILY, AdSchedule.Recurrence.WEEKLY) and not attrs.get("starts_at"):
+            # starts_at is NOT NULL on the model; recurring schedules only use
+            # local_time, so seed the column instead of letting the INSERT
+            # fail with a 500 the moment an admin saves a daily break.
+            existing = getattr(self.instance, "starts_at", None)
+            if existing is None:
+                from django.utils import timezone
+
+                attrs["starts_at"] = timezone.now()
         return attrs
 
 

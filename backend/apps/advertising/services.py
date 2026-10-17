@@ -34,8 +34,11 @@ logger = logging.getLogger("apps")
 # A break opens this many seconds after its scheduled instant to let the
 # engine finish the current track (documented "safe point" policy).
 BREAK_GRACE_SECONDS = 20
-# A break stays open for at most this long after the scheduled instant.
-BREAK_WINDOW_SECONDS = 300
+# A break stays open for at most this long after the scheduled instant. It
+# must outlast the longest track in the library (543s today) — the engine
+# waits for a track boundary, so a shorter window would expire mid-song
+# and the break would never air.
+BREAK_WINDOW_SECONDS = 600
 
 
 def eligible_visual_campaigns(placement: str | None = None, at=None) -> list[VisualCampaign]:

@@ -10,6 +10,12 @@ export function HomePage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="min-w-0">
           <RadioPlayer />
+          {/* Below-player slot: the ad sits right under the (compact mobile)
+              player so it lands on the first screen. Hidden when no campaign
+              targets this placement. */}
+          <div className="mt-6">
+            <SponsorPanel placement="below_player" hideWhenEmpty />
+          </div>
         </div>
         <div className="min-w-0 lg:pt-1">
           <SponsorPanel placement="sidebar" />

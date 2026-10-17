@@ -111,12 +111,12 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
       {/* Glass-layered spectrum drawn inside the card; the fixed background
           visualizer in App keeps the whole page alive. */}
       <AudioVisualizer variant="card" />
-      <div className={`relative z-10 ${compact ? 'p-5 sm:p-6' : 'p-5 sm:p-8'}`}>
-        <div className={compact ? 'flex flex-col gap-5' : 'flex flex-col gap-6 sm:flex-row sm:items-center sm:gap-8'}>
+      {/* Mobile keeps the whole card compact (smaller art, tighter padding,
+          no clock line) so the advert below the player stays above the fold. */}
+      <div className={`relative z-10 ${compact ? 'p-5 sm:p-6' : 'p-4 sm:p-8'}`}>
+        <div className={compact ? 'flex flex-col gap-5' : 'flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8'}>
           <div
-            className={`relative mx-auto w-full max-w-[260px] shrink-0 overflow-hidden rounded-xl bg-surface-2/80 sm:mx-0 ${
-              compact ? 'aspect-square max-w-[140px]' : 'aspect-square sm:w-48'
-            }`}
+            className={`relative mx-auto w-full max-w-[170px] shrink-0 overflow-hidden rounded-xl bg-surface-2/80 sm:mx-0 ${compact ? 'aspect-square max-w-[140px]' : 'aspect-square sm:max-w-none sm:w-48'}`}
           >
             {artwork ? (
               <img
@@ -154,7 +154,7 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
             {data?.album && <p className="mt-0.5 truncate text-sm text-muted">{data.album}</p>}
 
             {progressPct !== null && position !== null && data?.duration_seconds ? (
-              <div className="mt-4" aria-label="Track progress">
+              <div className="mt-3 sm:mt-4" aria-label="Track progress">
                 <div className="h-1 w-full overflow-hidden rounded-full bg-surface-2/80">
                   <div className="h-full rounded-full bg-accent transition-[width] duration-1000 ease-linear" style={{ width: `${progressPct}%` }} />
                 </div>
@@ -164,10 +164,10 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
                 </div>
               </div>
             ) : (
-              <div className="mt-4 h-1" aria-hidden />
+              <div className="mt-3 h-1 sm:mt-4" aria-hidden />
             )}
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-3 sm:mt-4 sm:justify-start">
               <button
                 onClick={toggle}
                 className="btn-primary h-12 px-6 text-base"
@@ -238,7 +238,9 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
 
-        <p className="relative z-10 mt-6 border-t border-line/70 pt-4 text-sm tabular-nums text-ink/90">
+        {/* Clock line is desktop-only: on phones it eats the fold space the
+            advert under the player needs. */}
+        <p className="relative z-10 mt-6 hidden border-t border-line/70 pt-4 text-sm tabular-nums text-ink/90 sm:block">
           {formatDateTime(serverNow)}
         </p>
       </div>

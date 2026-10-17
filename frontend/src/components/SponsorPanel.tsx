@@ -14,8 +14,10 @@ const REFRESH_MS = 45_000 // re-check eligibility: campaigns start/stop on a sch
  *   images keep their aspect ratio inside a generous frame instead of being
  *   cropped, so advertisers can upload posters
  * - shows an "Advertise With Us" placeholder when no campaign is eligible
+ *   (unless hideWhenEmpty — used by slots that should vanish instead of
+ *   reserving space for a placeholder)
  */
-export function SponsorPanel({ placement = 'sidebar' }: { placement?: string }) {
+export function SponsorPanel({ placement = 'sidebar', hideWhenEmpty = false }: { placement?: string; hideWhenEmpty?: boolean }) {
   const [banners, setBanners] = useState<Banner[]>([])
   const [index, setIndex] = useState(0)
   const [loaded, setLoaded] = useState(false)
@@ -81,6 +83,10 @@ export function SponsorPanel({ placement = 'sidebar' }: { placement?: string }) 
   }
 
   const label = useMemo(() => (banners.length > 1 ? `${(index % banners.length) + 1}/${banners.length}` : null), [index, banners.length])
+
+  // Render nothing (not even the skeleton) while loading or when there is no
+  // eligible campaign — the slot stays out of the flow entirely.
+  if (hideWhenEmpty && (!loaded || !current)) return null
 
   return (
     <aside className="card flex flex-col overflow-hidden" aria-label="Advertisement">

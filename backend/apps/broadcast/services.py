@@ -157,6 +157,39 @@ def update_listeners(count: int | None) -> None:
     state.save(update_fields=["listeners", "listeners_measured_at", "updated_at"])
 
 
+def poll_icecast_listeners() -> tuple[str, int | None]:
+    """One Icecast stats fetch, stored into BroadcastState.
+
+    Returns ("skipped", None) when unconfigured — nothing is written, so a
+    deployment without Icecast keeps its honest "listeners: —" instead of a
+    fabricated 0. ("cleared", None) on a failed fetch (count set to None);
+    ("updated", n) on success.
+    """
+    import json
+    import urllib.request
+
+    from django.conf import settings
+
+    base = settings.ICECAST_STATS_URL.rstrip("/")
+    if not base:
+        return "skipped", None
+    url = f"{base}/status-json.xsl?mount=/{settings.ICECAST_MOUNT.lstrip('/')}"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        stats = data.get("icestats", {})
+        source = stats.get("source")
+        if isinstance(source, list):
+            source = source[0] if source else None
+        count = int(source.get("listeners", 0)) if source else 0
+    except Exception as exc:
+        logger.warning("icecast poll failed: %s", exc)
+        update_listeners(None)
+        return "cleared", None
+    update_listeners(count)
+    return "updated", count
+
+
 def check_engine_health() -> None:
     """Record a health event when the engine has gone quiet. Idempotent-ish."""
     state = get_state()

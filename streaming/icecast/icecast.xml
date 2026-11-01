@@ -5,7 +5,7 @@
 -->
 <icecast>
     <location>Earth</location>
-    <admin>admin@auroraradio.example</admin>
+    <admin>admin@aurora.radio</admin>
 
     <limits>
         <clients>100</clients>

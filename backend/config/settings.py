@@ -118,7 +118,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 STATION_NAME = env("STATION_NAME", "Aurora Radio")
 STATION_TAGLINE = env("STATION_TAGLINE", "One live stream. The whole planet listening.")
 STATION_TIMEZONE = env("STATION_TIMEZONE", "UTC")
-STATION_CONTACT_EMAIL = env("STATION_CONTACT_EMAIL", "hello@auroraradio.example")
+STATION_CONTACT_EMAIL = env("STATION_CONTACT_EMAIL", "hello@aurora.radio")
 STATION_CONTACT_ADDRESS = env("STATION_CONTACT_ADDRESS", "")
 STATION_SOCIAL = {
     "instagram": env("STATION_SOCIAL_INSTAGRAM", ""),
@@ -211,7 +211,7 @@ EMAIL_PORT = env_int("EMAIL_PORT", 587)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "Aurora Radio <no-reply@auroraradio.example>")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "Aurora Radio <no-reply@aurora.radio>")
 
 # ---------------------------------------------------------------------------
 # Logging — structured single-line JSON-ish logs

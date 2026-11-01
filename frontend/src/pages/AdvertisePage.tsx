@@ -51,7 +51,7 @@ export function AdvertisePage() {
     if (!form.business_name.trim()) errs.business_name = 'Business name is required.'
     if (!form.contact_name.trim()) errs.contact_name = 'Contact name is required.'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = 'A valid email is required.'
-    if (form.website && !/^https?:\/\/.+\..+/.test(form.website)) errs.website = 'Include the full URL, e.g. https://example.com'
+    if (form.website && !/^https?:\/\/.+\..+/.test(form.website)) errs.website = 'Include the full URL, e.g. https://yourbrand.com'
     if (form.start_date && form.end_date && form.end_date < form.start_date)
       errs.end_date = 'End date must be on or after the start date.'
     setErrors(errs)

@@ -334,7 +334,7 @@ output.icecast(
   password=ICE_PASS,
   mount=MOUNT,  # e.g. "radio" — must match STREAM_PUBLIC_URL's final segment and ICECAST_MOUNT
   name="Aurora Radio",
-  description="Aurora Radio — one live stream, worldwide",
-  url="https://auroraradio.example",
+  description="Aurora Radio - one live stream, worldwide",
+  url="https://aurora.radio",
   final
 )

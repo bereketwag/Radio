@@ -4,7 +4,7 @@ import { api, getToken, setToken, User } from './api'
 interface AuthContextValue {
   user: User | null
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<User>
   register: (payload: Record<string, string>) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await api.post<{ user: User; token: string }>('/auth/login/', { email, password })
     setToken(res.token)
     setUser(res.user)
+    return res.user
   }, [])
 
   const register = useCallback(async (payload: Record<string, string>) => {

@@ -80,9 +80,10 @@ export function AccountPage() {
     setBusy(true)
     try {
       if (mode === 'signin') {
-        await login(email, password)
+        const signedIn = await login(email, password)
+        const staff = ['super_admin', 'station_admin', 'ad_manager'].includes(signedIn.role)
         const from = (location.state as { from?: string } | null)?.from
-        navigate(from && !from.startsWith('/admin') ? from : isStaff ? '/admin' : '/', { replace: true })
+        navigate(from && !from.startsWith('/admin') ? from : staff ? '/admin' : '/', { replace: true })
       } else if (mode === 'register') {
         await register({ email, password, password_confirm: passwordConfirm })
         navigate('/', { replace: true })

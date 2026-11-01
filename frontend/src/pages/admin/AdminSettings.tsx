@@ -268,7 +268,7 @@ export function AdminSettings() {
                 type="email"
                 value={form.contact_email}
                 onChange={(e) => setForm({ ...form, contact_email: e.target.value })}
-                placeholder="hello@example.com"
+                placeholder="hello@yourstation.com"
               />
             </div>
             <div>

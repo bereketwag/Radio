@@ -85,12 +85,20 @@ export function AdminRequests() {
         setNotice(`Audio campaign created for ${r.business_name}. Upload the spot and schedule a break on Audio campaigns.`)
         navigate('/admin/audio')
       } else {
+        // A banner must point at the advertiser's real site — never invent a
+        // placeholder destination.
+        if (!r.website) {
+          setNotice(
+            `Add a website for ${r.business_name} before creating a banner campaign — the ad needs a real destination link.`,
+          )
+          return
+        }
         const placement = r.ad_format === 'modal' ? 'modal' : 'sidebar'
         await api.post('/admin-panel/visual-campaigns/', {
           ...base,
           placement,
           priority: 5,
-          destination_url: r.website || 'https://example.com',
+          destination_url: r.website,
         })
         setNotice(`Banner campaign created for ${r.business_name}. Upload the creative on Banner campaigns — it will not serve until a banner is attached and the campaign is approved.`)
         navigate('/admin/visual')

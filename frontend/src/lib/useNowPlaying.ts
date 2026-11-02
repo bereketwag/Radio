@@ -56,6 +56,11 @@ export function useNowPlaying(): NowPlayingState {
       }
     }
 
+    // Prime the player immediately: the SSE handshake can take a moment (and
+    // fails outright while the backend is still booting), so a plain request
+    // makes the first paint show the real track instead of "Stream offline".
+    void pollOnce()
+
     if (typeof EventSource === 'undefined') {
       startPolling()
     } else {

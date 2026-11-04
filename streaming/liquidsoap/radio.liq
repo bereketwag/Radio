@@ -43,10 +43,13 @@ FALLBACK    = environment.get(default="/srv/radio/fallback/emergency.wav", "FALL
 
 def auth_header() = [("X-Broadcast-Key", API_KEY)] end
 
-# Metadata access raises when a key is missing — read it safely.
+# Metadata access raises when a key is missing — read it safely. Liquidsoap
+# also reports absent keys as an empty string, so treat "" as missing too
+# (otherwise the now-playing "kind" lost its "music" default).
 def meta_or(m, key, fallback) =
   try
-    m[key]
+    value = m[key]
+    if value == "" then fallback else value end
   catch _ do
     fallback
   end
@@ -129,10 +132,15 @@ def refresh_force() =
     )
     let json.parse ({active}: {active: bool}) = body
     if active then
-      let json.parse ({uri, requested_at}: {uri: string, requested_at: string}) = body
+      let json.parse ({uri, title, artist, kind, ref_id, requested_at}: {uri: string, title: string, artist: string, kind: string, ref_id: string, requested_at: string}) = body
       if uri != "" and requested_at != force_seen() then
         force_seen := requested_at
-        force_uri := uri
+        # annotate: carries the library title/artist into the request itself.
+        # Without it the engine only reports whatever tags the decoder finds —
+        # MP4/M4A tags are often invisible to it, which left the site showing
+        # the previous track for the whole song. `kind`/`ref_id` let an advert
+        # forced on air report itself as an advert, not as a song.
+        force_uri := "annotate:title=\"#{title}\",artist=\"#{artist}\",kind=\"#{kind}\",ref_id=\"#{ref_id}\":#{uri}"
         force_active := true
         log.important("force-play queued: #{uri}")
       end
@@ -180,7 +188,7 @@ radio = fallback(track_sensitive=false, [force, offair_or_music, emergency])
 # ---------------------------------------------------------------------------
 def post_now_playing(m) =
   payload = json.stringify({
-    kind = "music",
+    kind = meta_or(m, "kind", "music"),
     title = meta_or(m, "title", ""),
     artist = meta_or(m, "artist", ""),
     album = meta_or(m, "album", ""),
@@ -188,6 +196,7 @@ def post_now_playing(m) =
     # blank or rewrite "title" during decode — the backend matches this
     # URL back to the library entry so rotation never loses the anchor.
     uri = meta_or(m, "initial_uri", ""),
+    ref_id = meta_or(m, "ref_id", ""),
     duration_seconds = int(max(0., radio.duration())),
     started_at = time()  # engine wall-clock instant (UTC epoch seconds)
   })

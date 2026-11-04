@@ -212,17 +212,17 @@ export function PlayerProvider({
   }, [connect])
 
   // Reconnect when the (possibly new) stream URL changes while we're already
-  // mid-listen. Guarded by URL identity: reacting to every `state` change
-  // here used to re-run connect() during 'connecting', aborting the in-flight
-  // load with a fresh cache-buster and defeating the retry backoff.
+  // mid-listen. This also completes a "play" pressed before the station
+  // config arrived: otherwise that click was silently swallowed and the
+  // button looked broken.
   const lastUrlRef = useRef<string | null>(null)
   useEffect(() => {
     if (!streamUrl || streamUrl === lastUrlRef.current) return
     lastUrlRef.current = streamUrl
-    if (userWantedRef.current && audioRef.current?.paused && state !== 'idle') {
+    if (userWantedRef.current && audioRef.current?.paused) {
       connect()
     }
-  }, [streamUrl, connect, state])
+  }, [streamUrl, connect])
 
   useEffect(() => () => clearRetry(), [clearRetry])
 
@@ -230,8 +230,13 @@ export function PlayerProvider({
     userWantedRef.current = true
     setNeedsUserGesture(false)
     attemptsRef.current = 0
+    if (!streamUrl) {
+      // Station config still loading — show intent, connect when it lands.
+      setState('connecting')
+      return
+    }
     connect()
-  }, [connect])
+  }, [connect, streamUrl])
 
   const pause = useCallback(() => {
     userWantedRef.current = false

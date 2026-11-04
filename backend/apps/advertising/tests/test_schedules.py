@@ -1,6 +1,8 @@
 """Business rule tests: schedule conflicts, break windows, missed breaks."""
-from datetime import time, timedelta, timezone as dt_timezone
+from datetime import time, timedelta
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.test import TestCase
 from django.utils import timezone
 
@@ -14,6 +16,11 @@ from apps.advertising.models import (
     CampaignStatus,
     PaymentStatus,
 )
+
+
+def station_now():
+    """Current time on the station clock (the zone schedules use)."""
+    return timezone.now().astimezone(ZoneInfo(settings.STATION_TIMEZONE))
 
 
 class ScheduleFixture(TestCase):
@@ -62,15 +69,14 @@ class ScheduleConflictTests(ScheduleFixture):
 
     def test_weekly_same_weekday_time_conflicts(self):
         # Use the station-local weekday "today" so both land on the same day.
-        tz = dt_timezone.utc
-        today = timezone.now().astimezone(tz).weekday()
+        today = timezone.now().astimezone(ZoneInfo(settings.STATION_TIMEZONE)).weekday()
         a = self.make_schedule(recurrence=AdSchedule.Recurrence.WEEKLY, weekday=today, local_time=time(12, 0))
         b = self.make_schedule(recurrence=AdSchedule.Recurrence.WEEKLY, weekday=today, local_time=time(12, 0))
         conflicts = services.find_schedule_conflicts(self.campaign, b)
         self.assertTrue(any(c["with_schedule_id"] == str(a.id) for c in conflicts))
 
     def test_weekly_different_weekday_no_conflict(self):
-        today = timezone.now().weekday()
+        today = timezone.now().astimezone(ZoneInfo(settings.STATION_TIMEZONE)).weekday()
         self.make_schedule(recurrence=AdSchedule.Recurrence.WEEKLY, weekday=today, local_time=time(12, 0))
         b = self.make_schedule(
             recurrence=AdSchedule.Recurrence.WEEKLY, weekday=(today + 3) % 7, local_time=time(12, 0)
@@ -82,7 +88,7 @@ class BreakWindowTests(ScheduleFixture):
     def test_daily_window_opens_at_local_time(self):
         self.make_schedule(local_time=time(12, 0), max_break_seconds=60)
         # 12:00 UTC == station tz UTC by default in tests
-        at = timezone.now().replace(hour=12, minute=0, second=10, microsecond=0)
+        at = station_now().replace(hour=12, minute=0, second=10, microsecond=0)
         if at < timezone.now():
             at += timedelta(days=1)
         breaks = services.active_breaks(at=at)
@@ -90,14 +96,14 @@ class BreakWindowTests(ScheduleFixture):
 
     def test_window_closed_outside_break(self):
         self.make_schedule(local_time=time(12, 0))
-        at = timezone.now().replace(hour=3, minute=0, second=0, microsecond=0)
+        at = station_now().replace(hour=3, minute=0, second=0, microsecond=0)
         self.assertEqual(services.active_breaks(at=at), [])
 
 
 class MissedBreakTests(ScheduleFixture):
     def test_break_log_created_when_window_opens(self):
         self.make_schedule(local_time=time(12, 0), max_break_seconds=60)
-        at = timezone.now().replace(hour=12, minute=0, second=5, microsecond=0)
+        at = station_now().replace(hour=12, minute=0, second=5, microsecond=0)
         if at < timezone.now():
             at += timedelta(days=1)
         payload = services.build_ad_break_payload(at=at)
@@ -107,13 +113,13 @@ class MissedBreakTests(ScheduleFixture):
     def test_break_payload_always_carries_schedule_id(self):
         # The engine parses every poll with a fixed record type — an inactive
         # payload without schedule_id would make each response unreadable.
-        closed = timezone.now().replace(hour=3, minute=0, second=0, microsecond=0)
+        closed = station_now().replace(hour=3, minute=0, second=0, microsecond=0)
         inactive = services.build_ad_break_payload(at=closed)
         self.assertIn("schedule_id", inactive)
         self.assertEqual(inactive["schedule_id"], "")
 
         self.make_schedule(local_time=time(12, 0), max_break_seconds=60)
-        at = timezone.now().replace(hour=12, minute=0, second=5, microsecond=0)
+        at = station_now().replace(hour=12, minute=0, second=5, microsecond=0)
         if at < timezone.now():
             at += timedelta(days=1)
         active = services.build_ad_break_payload(at=at)
@@ -129,7 +135,7 @@ class MissedBreakTests(ScheduleFixture):
 
     def test_window_stays_open_until_break_confirmed(self):
         self.make_schedule(local_time=time(12, 0), max_break_seconds=60)
-        at = timezone.now().replace(hour=12, minute=0, second=5, microsecond=0)
+        at = station_now().replace(hour=12, minute=0, second=5, microsecond=0)
         if at < timezone.now():
             at += timedelta(days=1)
         first = services.build_ad_break_payload(at=at)
@@ -163,7 +169,7 @@ class MissedBreakTests(ScheduleFixture):
         self.campaign.status = CampaignStatus.PAUSED
         self.campaign.save()
         self.make_schedule(local_time=time(12, 0))
-        at = timezone.now().replace(hour=12, minute=0, second=5, microsecond=0)
+        at = station_now().replace(hour=12, minute=0, second=5, microsecond=0)
         if at < timezone.now():
             at += timedelta(days=1)
         payload = services.build_ad_break_payload(at=at)

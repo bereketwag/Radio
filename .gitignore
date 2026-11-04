@@ -20,6 +20,7 @@ media/
 
 # Local music library & tool artifacts at repo root
 /audio/
+/music/
 .freebuff/
 
 # Node / frontend

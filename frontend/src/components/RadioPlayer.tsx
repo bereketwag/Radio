@@ -52,6 +52,9 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
   }, [data?.started_at, data?.duration_seconds, serverNow])
 
   const isPlaying = state === 'playing' || state === 'connecting' || state === 'reconnecting'
+  // No metadata yet and the first request is still in flight: show "tuning in"
+  // rather than claiming the station is offline before we know anything.
+  const pending = !data && status !== 'error'
   const offAir = data?.broadcast_enabled === false
   const advert = !offAir && data?.kind === 'advert'
   const progressPct =
@@ -96,6 +99,11 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
     <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent">
       <span className="h-1.5 w-1.5 rounded-full bg-accent animate-live-pulse" aria-hidden />
       LIVE
+    </span>
+  ) : pending ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2/80 px-2.5 py-1 text-xs font-semibold text-muted">
+      <Loader2 size={12} className="animate-spin" aria-hidden />
+      TUNING IN
     </span>
   ) : (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning">
@@ -146,11 +154,20 @@ export function RadioPlayer({ compact = false }: { compact?: boolean }) {
               className={`mt-1 truncate font-semibold tracking-tight ${compact ? 'text-xl' : 'text-2xl sm:text-3xl'}`}
               title={data?.title ?? undefined}
             >
-              {data?.title ?? (data?.live ? 'On air' : 'Stream offline')}
+              {data?.title ?? (pending ? 'Tuning in…' : data?.live ? 'On air' : 'Stream offline')}
             </h1>
-            <p className="mt-1 truncate text-muted">
-              {data?.artist ?? (data?.live ? 'Metadata unavailable' : 'Waiting for the broadcast engine…')}
-            </p>
+            {(() => {
+              const subtitle =
+                data?.artist ||
+                (pending
+                  ? 'Connecting to the live stream…'
+                  : data?.live
+                    ? !data.title
+                      ? 'Metadata unavailable'
+                      : ''
+                    : 'Waiting for the broadcast engine…')
+              return subtitle ? <p className="mt-1 truncate text-muted">{subtitle}</p> : null
+            })()}
             {data?.album && <p className="mt-0.5 truncate text-sm text-muted">{data.album}</p>}
 
             {progressPct !== null && position !== null && data?.duration_seconds ? (

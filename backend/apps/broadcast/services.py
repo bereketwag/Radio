@@ -85,7 +85,7 @@ def ingest_metadata(payload: dict) -> BroadcastState:
 
         started_at = datetime.fromtimestamp(started_at, tz=dt_timezone.utc)
 
-    state.kind = payload.get("kind", "music")
+    state.kind = payload.get("kind") or "music"
     state.title = payload.get("title", "") or ""
     state.artist = payload.get("artist", "") or ""
     state.album = payload.get("album", "") or ""
@@ -96,21 +96,33 @@ def ingest_metadata(payload: dict) -> BroadcastState:
     state.last_heartbeat = now
 
     track = None
+    # True when the engine told us *which file* it is playing (id or URL), as
+    # opposed to guessing from the reported title. Only then is the library
+    # row authoritative over the tags inside the audio file — those are often
+    # ripped YouTube titles ("... New Amazing Gospel Song 2019").
+    authoritative = False
     track_id = payload.get("track_id")
     if track_id:
         track = Track.objects.filter(id=track_id).first()
+        authoritative = track is not None
     if track is None:
         # URL first: tags inside the file can blank the title during decode.
         track = _track_for_uri(payload.get("uri", ""))
+        authoritative = track is not None
     if track is None and state.kind == "music" and state.title:
         track = (
             Track.objects.filter(enabled=True, title__iexact=state.title)
             .filter(Q(artist__iexact=state.artist) | Q(artist=""))
             .first()
         )
-    if track is not None:
-        # Prefer library metadata when the file itself carried none (or
-        # wrong tags) — the admin's title is what the site should show.
+    if track is not None and authoritative:
+        # What the admin typed in the library is what the site shows, so a
+        # "Play now" of a file with messy embedded tags still reads cleanly.
+        state.title = track.title
+        state.artist = track.artist or ""
+        state.album = track.album or ""
+    elif track is not None:
+        # Title match is a guess — only fill blanks with it.
         if not state.title:
             state.title = track.title
         if not state.artist:
@@ -223,7 +235,7 @@ def build_status_payload() -> dict:
     if not artwork and state.track_id and state.track.artwork:
         artwork = state.track.artwork.url
 
-    return {
+    payload = {
         "live": online,
         "broadcast_enabled": StationSettings.get().broadcast_enabled,
         "server_time": now.isoformat(),
@@ -243,6 +255,8 @@ def build_status_payload() -> dict:
         "stream_url": settings.STREAM_PUBLIC_URL,
         "track_id": str(state.track_id) if state.track_id else None,
     }
+
+    return payload
 
 
 def _rotate_after_current(tracks: list[Track]) -> list[Track]:
@@ -400,28 +414,98 @@ def request_force_play(track: Track) -> BroadcastState:
         raise ValueError("This track has no audio file.")
     state = get_state()
     state.force_track = track
+    state.force_audio_url = ""
+    state.force_title = ""
+    state.force_artist = ""
+    state.force_kind = ""
+    state.force_ref_id = ""
+    state.force_duration = 0
     state.force_requested_at = timezone.now()
     state.force_started_at = None
-    state.save(update_fields=["force_track", "force_requested_at", "force_started_at"])
+    state.save(
+        update_fields=[
+            "force_track",
+            "force_audio_url",
+            "force_title",
+            "force_artist",
+            "force_kind",
+            "force_ref_id",
+            "force_duration",
+            "force_requested_at",
+            "force_started_at",
+        ]
+    )
+    return state
+
+
+def request_force_audio(
+    uri: str,
+    *,
+    title: str = "",
+    artist: str = "",
+    kind: str = "music",
+    ref_id: str = "",
+    duration_seconds: int = 0,
+) -> BroadcastState:
+    """Queue any audio file (an advert, a jingle) to air once, right now.
+
+    This is the advert equivalent of "Play now": the operator should be able
+    to hear a spot immediately without waiting for its scheduled break.
+    """
+    state = get_state()
+    state.force_track = None
+    state.force_audio_url = uri
+    state.force_title = title
+    state.force_artist = artist
+    state.force_kind = kind
+    state.force_ref_id = ref_id
+    state.force_duration = max(0, int(duration_seconds or 0))
+    state.force_requested_at = timezone.now()
+    state.force_started_at = None
+    state.save(
+        update_fields=[
+            "force_track",
+            "force_audio_url",
+            "force_title",
+            "force_artist",
+            "force_kind",
+            "force_ref_id",
+            "force_duration",
+            "force_requested_at",
+            "force_started_at",
+        ]
+    )
     return state
 
 
 def build_force_play_payload() -> dict:
-    """Hand the pending forced track to the engine — claimed on first read.
+    """Hand the pending forced item to the engine — claimed on first read.
 
-    Returns {"active": False} when nothing is pending, the track is unusable,
-    or the broadcast is off (a forced track must never break the off-air loop;
+    Returns {"active": False} when nothing is pending, the item is unusable,
+    or the broadcast is off (a forced item must never break the off-air loop;
     it airs once the broadcast is switched back on and the engine re-polls).
     """
     state = get_state()
+    if state.force_started_at is not None or not StationSettings.get().broadcast_enabled:
+        return {"active": False}
+
+    # Advert / one-off audio file path.
+    if state.force_audio_url:
+        state.force_started_at = timezone.now()
+        state.save(update_fields=["force_started_at"])
+        return {
+            "active": True,
+            "uri": state.force_audio_url,
+            "title": state.force_title,
+            "artist": state.force_artist,
+            "kind": state.force_kind or "music",
+            "ref_id": state.force_ref_id,
+            "duration_seconds": state.force_duration,
+            "requested_at": state.force_requested_at.isoformat() if state.force_requested_at else "",
+        }
+
     track = state.force_track
-    if (
-        track is None
-        or state.force_started_at is not None
-        or not track.enabled
-        or not track.audio_file
-        or not StationSettings.get().broadcast_enabled
-    ):
+    if track is None or not track.enabled or not track.audio_file:
         return {"active": False}
 
     from apps.common.utils import public_media_url
@@ -433,6 +517,8 @@ def build_force_play_payload() -> dict:
         "uri": public_media_url(track.audio_file.url),
         "title": track.title,
         "artist": track.artist,
+        "kind": "music",
+        "ref_id": "",
         "duration_seconds": int(track.duration_seconds or 0),
         "requested_at": state.force_requested_at.isoformat() if state.force_requested_at else "",
     }

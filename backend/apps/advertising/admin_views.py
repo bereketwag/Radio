@@ -7,11 +7,17 @@ All routes require authentication and the appropriate station role:
 """
 import logging
 
+from datetime import timedelta
+
+from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import status
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -31,6 +37,8 @@ from apps.common.permissions import (
     IsSuperAdmin,
     user_has_role,
 )
+from apps.common.utils import probe_stored_audio_duration, public_media_url
+from apps.common.validators import validate_audio_upload
 
 from . import services
 from .models import (
@@ -41,6 +49,7 @@ from .models import (
     AudioAdvert,
     AudioCampaign,
     CampaignStatus,
+    PaymentStatus,
     VisualCampaign,
 )
 from .serializers import (
@@ -239,6 +248,264 @@ class AudioCampaignViewSet(ModelViewSet):
         campaign.save(update_fields=["status"])
         _audit(request, f"audio_campaign.{new_status}", campaign, f"{campaign.name} -> {new_status}")
         return Response(AudioCampaignSerializer(campaign).data)
+
+    @action(detail=True, methods=["post"])
+    def start(self, request, pk=None):
+        """One click: clear every gate that stops a campaign from airing.
+
+        Status, billing and spot approval were three separate switches, so a
+        campaign could sit "scheduled" and never play. Starting now approves
+        the attached spots, marks billing paid if it was unpaid, and activates
+        the campaign.
+        """
+        campaign = self.get_object()
+        if not campaign.adverts.exists():
+            return Response({"detail": "Add an advert before starting this campaign."}, status=400)
+        if not campaign.schedules.filter(enabled=True).exists():
+            return Response({"detail": "Add at least one airing time first."}, status=400)
+        with transaction.atomic():
+            campaign.adverts.update(approved=True, active=True)
+            campaign.status = CampaignStatus.ACTIVE
+            if campaign.payment_status == PaymentStatus.UNPAID:
+                campaign.payment_status = PaymentStatus.PAID
+            campaign.save(update_fields=["status", "payment_status"])
+        _audit(request, "audio_campaign.start", campaign, f"Started {campaign.name}")
+        return Response(AudioCampaignSerializer(campaign).data)
+
+    @action(detail=True, methods=["post"], url_path="play_now")
+    def play_now(self, request, pk=None):
+        """Hear this campaign's spot immediately, without waiting for a break.
+
+        Interrupts the current item for one play (the engine's existing
+        force-play queue), records the play in the break history, and reports
+        the spot as an advertisement while it airs.
+        """
+        from apps.broadcast.services import request_force_audio
+        from apps.common.models import StationSettings
+
+        campaign = self.get_object()
+        spot = (
+            campaign.adverts.filter(approved=True, active=True)
+            .exclude(audio_file="")
+            .order_by("name")
+            .first()
+        )
+        if spot is None:
+            return Response(
+                {"detail": "This campaign has no usable recording. Upload a spot first."},
+                status=400,
+            )
+        if not StationSettings.get().broadcast_enabled:
+            return Response(
+                {"detail": "The station is switched off. Turn the broadcast on, then try again."},
+                status=400,
+            )
+
+        now = timezone.now()
+        duration = max(0, int(spot.duration_seconds or 0))
+        log = AdBreakLog.objects.create(
+            campaign=campaign,
+            scheduled_for=now,
+            started_at=now,
+            finished_at=now + timedelta(seconds=duration),
+            last_play_at=now,
+            result=AdBreakLog.Result.PLAYED,
+            seconds_played=duration,
+            detail="Played manually from the dashboard",
+        )
+        log.adverts_played.add(spot)
+
+        request_force_audio(
+            public_media_url(spot.audio_file.url),
+            title=spot.name,
+            artist=campaign.advertiser.name,
+            kind="advert",
+            ref_id=str(log.id),
+            duration_seconds=duration,
+        )
+        _audit(request, "audio_campaign.play_now", campaign, f"Play now: {spot.name}")
+        return Response(
+            {
+                "detail": f"“{spot.name}” is being sent to air now.",
+                "spot": spot.name,
+                "seconds": duration,
+            }
+        )
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="quick-start",
+        parser_classes=[MultiPartParser, FormParser, JSONParser],
+    )
+    def quick_start(self, request):
+        """Create advert + campaign + airing times in one atomic request.
+
+        This is what the admin wizard calls: upload a spot, pick when it runs,
+        press start. Everything the engine needs is written in a single
+        transaction, so a failed step never leaves a half-working campaign.
+        """
+        data = request.data
+        advert_name = str(data.get("advert_name") or "").strip()
+        audio = request.FILES.get("audio_file")
+        errors: dict[str, list[str]] = {}
+
+        if not advert_name:
+            errors["advert_name"] = ["Give the advert a name."]
+        if audio is None:
+            errors["audio_file"] = ["Choose an audio recording."]
+        else:
+            try:
+                validate_audio_upload(audio)
+            except DjangoValidationError as exc:
+                errors["audio_file"] = list(exc.messages)
+
+        # Advertiser: an existing partner id, or a name we create on the spot.
+        advertiser = None
+        advertiser_id = str(data.get("advertiser") or "").strip()
+        if advertiser_id:
+            advertiser = Advertiser.objects.filter(id=advertiser_id).first()
+            if advertiser is None:
+                errors["advertiser"] = ["That advertiser no longer exists."]
+        else:
+            advertiser_name = str(data.get("advertiser_name") or "").strip()
+            if not advertiser_name:
+                errors["advertiser_name"] = ["Who is this advert for?"]
+            else:
+                advertiser = Advertiser.objects.filter(name__iexact=advertiser_name).first()
+                if advertiser is None:
+                    advertiser = Advertiser(
+                        name=advertiser_name,
+                        email=str(data.get("advertiser_email") or "").strip()
+                        or settings.DEFAULT_FROM_EMAIL
+                        or "ads@aurora.radio",
+                    )
+
+        # When it plays. `recurrence` is a plain-language preset: daily,
+        # weekdays, weekends, weekly (with `days=0,1,2`) or once (`once_at`).
+        recurrence = str(data.get("recurrence") or "daily").strip()
+        schedule_payloads: list[dict] = []
+        now = timezone.now()
+        if recurrence == "once":
+            parsed = parse_datetime(str(data.get("once_at") or ""))
+            if parsed is None:
+                errors["once_at"] = ["Choose the date and time for this one-off break."]
+            else:
+                if timezone.is_naive(parsed):
+                    parsed = timezone.make_aware(parsed)
+                if parsed < now - timedelta(minutes=1):
+                    errors["once_at"] = ["Choose a time in the future."]
+                else:
+                    schedule_payloads.append({"recurrence": "once", "starts_at": parsed})
+        elif recurrence in {"daily", "weekdays", "weekends", "weekly"}:
+            raw_times = data.get("times") or "12:00"
+            if isinstance(raw_times, str):
+                times = [t.strip() for t in raw_times.split(",") if t.strip()]
+            else:
+                times = [str(t).strip() for t in raw_times if str(t).strip()]
+            if not times:
+                errors["times"] = ["Pick at least one airing time."]
+            for value in times:
+                try:
+                    hour, minute = (int(p) for p in value.split(":", 1))
+                    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                        raise ValueError
+                except (ValueError, TypeError):
+                    errors["times"] = [f"“{value}” is not a valid time."]
+                    break
+            if recurrence == "daily":
+                for value in times:
+                    schedule_payloads.append(
+                        {"recurrence": "daily", "local_time": value, "starts_at": now}
+                    )
+            else:
+                if recurrence == "weekdays":
+                    days = [0, 1, 2, 3, 4]
+                elif recurrence == "weekends":
+                    days = [5, 6]
+                else:
+                    try:
+                        days = sorted({int(d) for d in str(data.get("days") or "").split(",") if d.strip() != ""})
+                    except ValueError:
+                        days = []
+                    if not days or any(d < 0 or d > 6 for d in days):
+                        errors["days"] = ["Pick at least one day of the week."]
+                for value in times:
+                    for day in days:
+                        schedule_payloads.append(
+                            {
+                                "recurrence": "weekly",
+                                "local_time": value,
+                                "weekday": day,
+                                "starts_at": now,
+                            }
+                        )
+        else:
+            errors["recurrence"] = ["Choose when this advert should play."]
+
+        try:
+            max_break = int(data.get("max_break_seconds") or 60)
+        except (TypeError, ValueError):
+            max_break = 60
+        max_break = max(10, min(300, max_break))
+
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        assert advertiser is not None and audio is not None
+        campaign_name = str(data.get("campaign_name") or "").strip() or f"{advertiser.name} — {advert_name}"
+
+        starts_at = parse_datetime(str(data.get("starts_at") or "")) or now
+        if timezone.is_naive(starts_at):
+            starts_at = timezone.make_aware(starts_at)
+        ends_at = parse_datetime(str(data.get("ends_at") or ""))
+        if ends_at and timezone.is_naive(ends_at):
+            ends_at = timezone.make_aware(ends_at)
+
+        with transaction.atomic():
+            if advertiser._state.adding:
+                advertiser.save()
+            advert = AudioAdvert.objects.create(
+                name=advert_name, audio_file=audio, approved=True, active=True
+            )
+            probed = probe_stored_audio_duration(advert.audio_file)
+            if probed:
+                AudioAdvert.objects.filter(pk=advert.pk).update(duration_seconds=probed)
+                advert.duration_seconds = probed
+                # Never schedule a break too short to fit the spot it exists
+                # for — that was a silent reason a campaign never aired.
+                max_break = max(max_break, min(300, advert.duration_seconds + 5))
+
+            campaign = AudioCampaign.objects.create(
+                advertiser=advertiser,
+                name=campaign_name,
+                status=CampaignStatus.ACTIVE,
+                payment_status=PaymentStatus.PAID,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                priority=5,
+            )
+            campaign.adverts.add(advert)
+            for payload in schedule_payloads:
+                ser = AdScheduleSerializer(
+                    data={**payload, "campaign": str(campaign.id), "max_break_seconds": max_break}
+                )
+                ser.is_valid(raise_exception=True)
+                ser.save()
+
+        _audit(request, "audio_campaign.quick_start", campaign, f"Quick-start campaign {campaign.name}")
+        fresh = (
+            AudioCampaign.objects.select_related("advertiser")
+            .prefetch_related("adverts", "schedules")
+            .get(pk=campaign.pk)
+        )
+        return Response(
+            {
+                "campaign": AudioCampaignSerializer(fresh).data,
+                "detail": "Campaign is on air.",
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["post"])
     def set_payment(self, request, pk=None):

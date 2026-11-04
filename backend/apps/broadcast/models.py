@@ -137,6 +137,15 @@ class BroadcastState(models.Model):
     force_track = models.ForeignKey(
         Track, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    # "Play now" also accepts a one-off audio file that is not in the music
+    # library (an advert). Keeping the URL and display metadata here means the
+    # engine can air it immediately without creating a fake Track.
+    force_audio_url = models.CharField(max_length=1000, blank=True, default="")
+    force_title = models.CharField(max_length=255, blank=True, default="")
+    force_artist = models.CharField(max_length=255, blank=True, default="")
+    force_kind = models.CharField(max_length=16, blank=True, default="")
+    force_ref_id = models.CharField(max_length=64, blank=True, default="")
+    force_duration = models.PositiveIntegerField(default=0)
     force_requested_at = models.DateTimeField(null=True, blank=True)
     force_started_at = models.DateTimeField(null=True, blank=True)
     # Admin "Play playlist now" (e.g. a Christmas playlist): while set, the

@@ -130,6 +130,64 @@ def iter_occurrences(schedule: AdSchedule, window_start, window_end):
         day += timedelta(days=1)
 
 
+def next_occurrence(schedule: AdSchedule, after=None, horizon_days: int = 31):
+    """Next (start, end) break window at or after `after`, or None.
+
+    Used by the API so the admin sees "next break: today 18:00" without
+    re-implementing the recurrence rules in the browser.
+    """
+    after = after or timezone.now()
+    for start, end in iter_occurrences(schedule, after, after + timedelta(days=horizon_days)):
+        if start >= after:
+            return (start, end)
+    return None
+
+
+def campaign_readiness(campaign: AudioCampaign, at=None) -> dict:
+    """Can this campaign actually air? Plain-language reason when it can't.
+
+    The old admin UI exposed every gate as a separate switch (status, payment,
+    spot approval), so a campaign could look "scheduled" while silently never
+    airing. The wizard and the campaign cards now surface one sentence instead.
+    """
+    at = at or timezone.now()
+    if campaign.status in {CampaignStatus.DRAFT, CampaignStatus.PENDING}:
+        return {"ready": False, "reason": "Not started yet"}
+    if campaign.status == CampaignStatus.PAUSED:
+        return {"ready": False, "reason": "Paused"}
+    if campaign.status in {CampaignStatus.REJECTED, CampaignStatus.EXPIRED}:
+        return {"ready": False, "reason": f"Campaign is {campaign.status}"}
+
+    # list() reuses the admin queryset's prefetch instead of one query per card.
+    adverts = list(campaign.adverts.all())
+    if not adverts:
+        return {"ready": False, "reason": "No advert uploaded"}
+    if not any(a.approved and a.active for a in adverts):
+        return {"ready": False, "reason": "The advert is not approved"}
+    if campaign.payment_status == PaymentStatus.UNPAID:
+        return {"ready": False, "reason": "Billing is marked unpaid"}
+    if campaign.starts_at and at < campaign.starts_at:
+        return {"ready": False, "reason": "Scheduled to start later"}
+    if campaign.ends_at and at > campaign.ends_at:
+        return {"ready": False, "reason": "Campaign has finished"}
+    if not any(s.enabled for s in campaign.schedules.all()):
+        return {"ready": False, "reason": "No airing times yet"}
+    return {"ready": True, "reason": None}
+
+
+def next_break_for(campaign: AudioCampaign, after=None):
+    """Earliest upcoming break across the campaign's enabled schedules."""
+    after = after or timezone.now()
+    upcoming = []
+    for schedule in campaign.schedules.all():
+        if not schedule.enabled:
+            continue
+        occurrence = next_occurrence(schedule, after)
+        if occurrence:
+            upcoming.append(occurrence[0])
+    return min(upcoming) if upcoming else None
+
+
 def active_breaks(at=None) -> list[tuple[AdSchedule, datetime, datetime]]:
     """All enabled schedules whose break window contains `at` (campaign eligible)."""
     at = at or timezone.now()
@@ -242,7 +300,10 @@ def record_ad_played(payload: dict) -> dict:
     """
     advert_id = payload.get("advert_id") or payload.get("id")
     played_at = payload.get("played_at")
-    duration = max(0, int(payload.get("duration") or 0))
+    # The DB length is authoritative. The engine's source.duration() can
+    # include queued/prefetched material (a 15s spot was logged as 28s), which
+    # made the website show an advert long after the music had resumed.
+    reported_duration = max(0, int(payload.get("duration") or 0))
 
     advert = AudioAdvert.objects.filter(id=advert_id).first() if advert_id else None
     if advert is None:
@@ -255,15 +316,29 @@ def record_ad_played(payload: dict) -> dict:
     if advert is None:
         return {"ok": False, "detail": "unknown advert"}
 
+    duration = advert.duration_seconds or reported_duration
+
     moment = timezone.now()
     horizon = moment - timedelta(seconds=BREAK_WINDOW_SECONDS + BREAK_GRACE_SECONDS)
 
     def _accumulate(existing: AdBreakLog) -> dict:
-        """A duplicate metadata event for a break we already recorded."""
-        existing.seconds_played += duration
-        existing.finished_at = moment
-        existing.save(update_fields=["seconds_played", "finished_at"])
-        return {"ok": True, "break_log_id": str(existing.id), "duplicate": True}
+        """A second report for the same break.
+
+        The engine repeats the metadata event for the same physical play; a
+        genuine second spot arrives at least a few seconds later. Comparing
+        the last play instant stops one play being counted twice (a 15s spot
+        was logged as 28s) while still accumulating a real second advert.
+        """
+        duplicate = (
+            existing.last_play_at is not None
+            and abs((moment - existing.last_play_at).total_seconds()) <= 2
+        )
+        if not duplicate:
+            existing.seconds_played += duration
+        existing.last_play_at = moment
+        existing.finished_at = moment + timedelta(seconds=duration)
+        existing.save(update_fields=["seconds_played", "finished_at", "last_play_at"])
+        return {"ok": True, "break_log_id": str(existing.id), "duplicate": duplicate}
 
     log = None
     schedule_id = payload.get("schedule_id")
@@ -315,10 +390,49 @@ def record_ad_played(payload: dict) -> dict:
     log.result = AdBreakLog.Result.PLAYED
     if log.started_at is None:
         log.started_at = moment
-    log.finished_at = moment
+    log.finished_at = moment + timedelta(seconds=duration)
+    log.last_play_at = moment
     log.detail = payload.get("filename", "") or log.detail
     log.save()
+    _mark_advert_on_air(advert, moment, duration)
     return {"ok": True, "break_log_id": str(log.id)}
+
+
+def _mark_advert_on_air(advert: AudioAdvert, started_at, duration: int) -> None:
+    """Make now-playing report the advert while it is actually airing.
+
+    Audio breaks play outside the music state machine, so the engine's normal
+    now-playing report never sees them. Without this the website kept showing
+    the previous song while listeners heard an advert.
+    """
+    try:
+        from apps.broadcast.services import get_state
+
+        state = get_state()
+        campaign = advert.campaigns.select_related("advertiser").first()
+        state.kind = "advert"
+        state.title = advert.name
+        state.artist = campaign.advertiser.name if campaign else ""
+        state.album = ""
+        state.artwork_url = ""
+        state.started_at = started_at
+        state.duration_seconds = max(0, int(duration))
+        state.track = None
+        state.save(
+            update_fields=[
+                "kind",
+                "title",
+                "artist",
+                "album",
+                "artwork_url",
+                "started_at",
+                "duration_seconds",
+                "track",
+                "updated_at",
+            ]
+        )
+    except Exception:  # never let a status update fail the play confirmation
+        logger.exception("could not mark advert on air")
 
 
 def close_missed_breaks(at=None) -> int:

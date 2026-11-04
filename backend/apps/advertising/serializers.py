@@ -187,18 +187,31 @@ class AudioCampaignSerializer(serializers.ModelSerializer):
     )
     schedules = AdScheduleSerializer(many=True, read_only=True)
     eligible = serializers.SerializerMethodField()
+    next_break_at = serializers.SerializerMethodField()
+    readiness = serializers.SerializerMethodField()
 
     class Meta:
         model = AudioCampaign
         fields = [
             "id", "advertiser", "advertiser_name", "name", "status", "payment_status",
             "starts_at", "ends_at", "priority", "adverts", "advert_ids", "schedules",
-            "eligible", "request", "created_at", "updated_at",
+            "eligible", "next_break_at", "readiness", "request", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def get_eligible(self, obj) -> bool:
         return obj.is_eligible()
+
+    def get_readiness(self, obj) -> dict:
+        from . import services
+
+        return services.campaign_readiness(obj)
+
+    def get_next_break_at(self, obj) -> str | None:
+        from . import services
+
+        nxt = services.next_break_for(obj)
+        return nxt.isoformat() if nxt else None
 
 
 class AdBreakLogSerializer(serializers.ModelSerializer):

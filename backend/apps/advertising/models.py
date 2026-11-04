@@ -267,6 +267,7 @@ class AdBreakLog(models.Model):
     scheduled_for = models.DateTimeField(db_index=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
+    last_play_at = models.DateTimeField(null=True, blank=True, help_text="Start of the most recent advert play in this break.")
     result = models.CharField(max_length=16, choices=Result.choices, default=Result.MISSED)
     seconds_played = models.PositiveIntegerField(default=0)
     adverts_played = models.ManyToManyField(AudioAdvert, related_name="break_plays", blank=True)

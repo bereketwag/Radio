@@ -143,8 +143,9 @@ ICECAST_MOUNT = env("ICECAST_MOUNT", "radio")
 # Shared secret Liquidsoap uses to authenticate internal endpoints.
 BROADCAST_API_KEY = env("BROADCAST_API_KEY", "dev-broadcast-key-change-me")
 
-# Upload limits
-MAX_AUDIO_UPLOAD_MB = env_int("MAX_AUDIO_UPLOAD_MB", 50)
+# Upload limits. Long-form radio (compilations, sermon-length tracks) can run
+# well past a pop song's size, so the audio ceiling is generous by default.
+MAX_AUDIO_UPLOAD_MB = env_int("MAX_AUDIO_UPLOAD_MB", 150)
 MAX_IMAGE_UPLOAD_MB = env_int("MAX_IMAGE_UPLOAD_MB", 5)
 ALLOWED_AUDIO_EXTENSIONS = {"mp3", "ogg", "opus", "flac", "m4a", "aac", "wav"}
 ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}

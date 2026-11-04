@@ -206,9 +206,17 @@ class AdPlayedFallbackTests(TestCase):
         )
         first = services.record_ad_played({"advert_id": str(self.advert.id), "duration": 30})
         self.assertTrue(first["ok"])
-        second = services.record_ad_played({"advert_id": str(self.advert.id), "duration": 12})
+        # A genuine second spot (not a repeated metadata event for the first).
+        second_advert = AudioAdvert.objects.create(
+            name="Spot 2", duration_seconds=12, approved=True, active=True
+        )
+        self.campaign.adverts.add(second_advert)
+        current.refresh_from_db()
+        current.last_play_at = timezone.now() - timedelta(seconds=10)
+        current.save(update_fields=["last_play_at"])
+        second = services.record_ad_played({"advert_id": str(second_advert.id), "duration": 12})
         self.assertTrue(second["ok"])
-        # One break, one row — the second metadata event only adds seconds.
+        # One break, one row - the second advert only adds seconds.
         self.assertEqual(AdBreakLog.objects.count(), 1)
         current.refresh_from_db()
         self.assertEqual(current.result, AdBreakLog.Result.PLAYED)
